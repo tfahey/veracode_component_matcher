@@ -677,6 +677,123 @@ class VeracodeApiFetcher:
             logger.error(f"Failed to collect SBOM data: {e}")
             raise
 
+    def save_vulnerability_data(self, vulnerabilities: List[Dict], filename: str = 'all_sca_components.json') -> str:
+        """Save vulnerability data to JSON file
+
+        Args:
+            vulnerabilities: List of vulnerability records from fetch_all_vulnerability_data()
+            filename: Output JSON filename
+
+        Returns:
+            Path to saved file
+        """
+        try:
+            with open(filename, 'w') as f:
+                json.dump(vulnerabilities, f, indent=2)
+            logger.info(f"✓ Saved {len(vulnerabilities)} vulnerability records to {filename}")
+            return filename
+        except Exception as e:
+            logger.error(f"Failed to save vulnerability data: {e}")
+            raise
+
+    def save_sbom_data(self, components: List[Dict], filename: str = 'all_sbom_components.json') -> str:
+        """Save SBOM component data to JSON file
+
+        Args:
+            components: List of SBOM components from fetch_all_sbom_data()
+            filename: Output JSON filename
+
+        Returns:
+            Path to saved file
+        """
+        try:
+            with open(filename, 'w') as f:
+                json.dump(components, f, indent=2)
+            logger.info(f"✓ Saved {len(components)} SBOM components to {filename}")
+            return filename
+        except Exception as e:
+            logger.error(f"Failed to save SBOM data: {e}")
+            raise
+
+    def export_vulnerability_csv(self, vulnerabilities: List[Dict], filename: str = 'vulnerability_data.csv') -> str:
+        """Export vulnerability data to CSV for Excel analysis
+
+        Args:
+            vulnerabilities: List of vulnerability records
+            filename: Output CSV filename
+
+        Returns:
+            Path to saved file
+        """
+        import csv
+
+        if not vulnerabilities:
+            logger.warning("No vulnerability data to export")
+            return None
+
+        try:
+            fieldnames = [
+                'cve_id', 'severity', 'cvss_score', 'cwe_id',
+                'component_name', 'component_version',
+                'sha1', 'library_id',
+                'app_id', 'app_name', 'business_criticality',
+                'build_id', 'build_version',
+                'first_found_date', 'mitigated_date',
+                'scantype', 'file_name', 'description',
+            ]
+
+            with open(filename, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames, restval='')
+                writer.writeheader()
+
+                for vuln in vulnerabilities:
+                    writer.writerow({k: vuln.get(k, '') for k in fieldnames})
+
+            logger.info(f"✓ Exported {len(vulnerabilities)} vulnerability records to {filename}")
+            return filename
+        except Exception as e:
+            logger.error(f"Failed to export vulnerability CSV: {e}")
+            raise
+
+    def export_sbom_csv(self, components: List[Dict], filename: str = 'sbom_components.csv') -> str:
+        """Export SBOM components to CSV for Excel analysis
+
+        Args:
+            components: List of SBOM components
+            filename: Output CSV filename
+
+        Returns:
+            Path to saved file
+        """
+        import csv
+
+        if not components:
+            logger.warning("No SBOM components to export")
+            return None
+
+        try:
+            fieldnames = [
+                'application_id', 'app_name',
+                'component_name', 'component_version', 'component_type',
+                'bom_ref', 'sha1', 'sha256', 'md5',
+                'purl', 'vendor',
+                'cve_ids', 'cwe_ids',
+                'file_path',
+            ]
+
+            with open(filename, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames, restval='')
+                writer.writeheader()
+
+                for comp in components:
+                    writer.writerow({k: comp.get(k, '') for k in fieldnames})
+
+            logger.info(f"✓ Exported {len(components)} SBOM components to {filename}")
+            return filename
+        except Exception as e:
+            logger.error(f"Failed to export SBOM CSV: {e}")
+            raise
+
 
 def main():
     """Fetch all apps, collect components, and match them"""

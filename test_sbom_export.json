@@ -1,0 +1,63 @@
+[
+  {
+    "application_id": "app-001",
+    "app_name": "Sample App 1",
+    "component_name": "log4j-core",
+    "component_version": "2.14.1",
+    "component_type": "library",
+    "bom_ref": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+    "sha1": "abc123def456",
+    "purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+    "vendor": "apache",
+    "cve_ids": "CVE-2021-44228"
+  },
+  {
+    "application_id": "app-001",
+    "app_name": "Sample App 1",
+    "component_name": "lodash",
+    "component_version": "4.17.21",
+    "component_type": "library",
+    "bom_ref": "pkg:npm/lodash@4.17.21",
+    "sha1": "88d36f5051fb029ad5ef1119a73953f7add33fd9",
+    "purl": "pkg:npm/lodash@4.17.21",
+    "vendor": "lodash",
+    "cve_ids": "CVE-2021-23337"
+  },
+  {
+    "application_id": "app-002",
+    "app_name": "Sample App 2",
+    "component_name": "express",
+    "component_version": "4.18.0",
+    "component_type": "library",
+    "bom_ref": "pkg:npm/express@4.18.0",
+    "sha1": "differentsha1value1234567890abcd",
+    "purl": null,
+    "vendor": "expressjs",
+    "library_id": "veracode-lib-express-4180",
+    "cve_ids": "CVE-2021-12345"
+  },
+  {
+    "application_id": "app-003",
+    "app_name": "Sample App 3",
+    "component_name": "django",
+    "component_version": "3.2.0",
+    "component_type": "library",
+    "bom_ref": "pkg:pypi/django@3.2.0",
+    "sha1": null,
+    "purl": "pkg:pypi/django@3.2.0",
+    "vendor": "django",
+    "cve_ids": "CVE-2022-12345"
+  },
+  {
+    "application_id": "app-004",
+    "app_name": "Sample App 4",
+    "component_name": "requests-http",
+    "component_version": "2.28.0",
+    "component_type": "library",
+    "bom_ref": "pkg:pypi/requests-http@2.28.0",
+    "sha1": null,
+    "purl": "pkg:pypi/requests-http@2.28.0",
+    "vendor": "requests",
+    "cve_ids": "CVE-2022-99999"
+  }
+]
