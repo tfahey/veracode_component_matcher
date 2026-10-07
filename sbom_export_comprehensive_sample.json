@@ -1,0 +1,21 @@
+[
+  {
+    "application_id": "550e8400-e29b-41d4-a716-446655440000",
+    "app_name": "eShopOnWeb",
+    "component_type": "library",
+    "component_name": "spring-boot-jarmode-tools",
+    "component_version": "3.5.15",
+    "bom_ref": "spring-boot-jarmode-tools-3.5.15.jar",
+    "sha1": "a7ab70a942a3ea366cef12d2610dcb65cd92b771",
+    "sha256": "0ef100c6915f599606de3d46ae898e7d46594a47db311071a488ee50b2f58a55",
+    "md5": null,
+    "bytecode_hash": "fd647b2cc0be9343ff9e71d6208a1fcd1e876bdc9b8f8e9815c9dae792689321",
+    "purl": "pkg:maven/org.springframework.boot/spring-boot-jarmode-tools@3.5.15",
+    "vendor": "springframework",
+    "file_path": "aig-retirement-configuration-api-1.0.0.127.jar#zip:BOOT-INF/lib/spring-boot-jarmode-tools-3.5.15.jar",
+    "cve_ids": null,
+    "cwe_ids": null,
+    "all_dependencies": null,
+    "match_type": "sha1"
+  }
+]

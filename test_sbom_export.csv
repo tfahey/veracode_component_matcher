@@ -1,6 +1,6 @@
-application_id,app_name,component_name,component_version,component_type,bom_ref,sha1,sha256,md5,purl,vendor,cve_ids,cwe_ids,file_path
-app-001,Sample App 1,log4j-core,2.14.1,library,pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1,abc123def456,,,pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1,apache,CVE-2021-44228,,
-app-001,Sample App 1,lodash,4.17.21,library,pkg:npm/lodash@4.17.21,88d36f5051fb029ad5ef1119a73953f7add33fd9,,,pkg:npm/lodash@4.17.21,lodash,CVE-2021-23337,,
-app-002,Sample App 2,express,4.18.0,library,pkg:npm/express@4.18.0,differentsha1value1234567890abcd,,,,expressjs,CVE-2021-12345,,
-app-003,Sample App 3,django,3.2.0,library,pkg:pypi/django@3.2.0,,,,pkg:pypi/django@3.2.0,django,CVE-2022-12345,,
-app-004,Sample App 4,requests-http,2.28.0,library,pkg:pypi/requests-http@2.28.0,,,,pkg:pypi/requests-http@2.28.0,requests,CVE-2022-99999,,
+application_id,app_name,component_type,component_name,component_version,bom_ref,sha1,sha256,md5,bytecode_hash,purl,vendor,file_path,cve_ids,cwe_ids,all_dependencies,match_type
+app-001,Sample App 1,library,log4j-core,2.14.1,pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1,abc123def456,,,,pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1,apache,,CVE-2021-44228,,,sha1
+app-001,Sample App 1,library,lodash,4.17.21,pkg:npm/lodash@4.17.21,88d36f5051fb029ad5ef1119a73953f7add33fd9,,,,pkg:npm/lodash@4.17.21,lodash,,CVE-2021-23337,,,sha1
+app-002,Sample App 2,library,express,4.18.0,pkg:npm/express@4.18.0,differentsha1value1234567890abcd,,,,,expressjs,,CVE-2021-12345,,,sha1
+app-003,Sample App 3,library,django,3.2.0,pkg:pypi/django@3.2.0,,,,,pkg:pypi/django@3.2.0,django,,CVE-2022-12345,,,composite_key
+app-004,Sample App 4,library,requests-http,2.28.0,pkg:pypi/requests-http@2.28.0,,,,,pkg:pypi/requests-http@2.28.0,requests,,CVE-2022-99999,,,composite_key

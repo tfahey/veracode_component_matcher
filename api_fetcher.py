@@ -733,13 +733,19 @@ class VeracodeApiFetcher:
 
         try:
             fieldnames = [
-                'cve_id', 'severity', 'cvss_score', 'cwe_id',
-                'component_name', 'component_version',
+                'cve_id', 'severity', 'cwe_id', 'cvss_score',
+                'component_name', 'component_version', 'component_id',
                 'sha1', 'library_id',
                 'app_id', 'app_name', 'business_criticality',
-                'build_id', 'build_version',
+                'build_id', 'build_version', 'build_published_date',
                 'first_found_date', 'mitigated_date',
-                'scantype', 'file_name', 'description',
+                'mitigation', 'mitigation_type', 'mitigation_date', 'mitigation_action',
+                'scantype', 'static_version', 'dynamic_version',
+                'static_submitted_date', 'dynamic_submitted_date',
+                'file_name', 'description', 'cve_summary',
+                'blocklisted', 'new', 'affects_policy_compliance',
+                'vulnerability_affects_policy_compliance', 'component_affects_policy_compliance',
+                'added_date', 'max_cvss_score', 'app_guid',
             ]
 
             with open(filename, 'w', newline='') as f:
@@ -774,11 +780,12 @@ class VeracodeApiFetcher:
         try:
             fieldnames = [
                 'application_id', 'app_name',
-                'component_name', 'component_version', 'component_type',
-                'bom_ref', 'sha1', 'sha256', 'md5',
+                'component_type', 'component_name', 'component_version',
+                'bom_ref', 'sha1', 'sha256', 'md5', 'bytecode_hash',
                 'purl', 'vendor',
-                'cve_ids', 'cwe_ids',
                 'file_path',
+                'cve_ids', 'cwe_ids',
+                'all_dependencies', 'match_type',
             ]
 
             with open(filename, 'w', newline='') as f:
