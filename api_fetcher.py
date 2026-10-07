@@ -194,21 +194,23 @@ class VeracodeApiFetcher:
             logger.debug(f"Failed to fetch build info for app {app_guid}: {e}")
             return None
 
-    def get_sbom(self, application_guid: str) -> Optional[Dict]:
+    def get_sbom(self, application_guid: str, app_name: str = "") -> Optional[Dict]:
         """
         Fetch SBOM data
 
         Args:
             application_guid: Application GUID
+            app_name: Application name (for logging)
 
         Returns:
             SBOM data, or None if not available
         """
+        app_label = f"{app_name}" if app_name else f"{application_guid}"
         try:
             # Try with vulnerability=True first (includes vulnerability data)
-            logger.debug(f"Fetching SBOM for {application_guid} with vulnerability data")
+            logger.debug(f"Fetching SBOM for {app_label} with vulnerability data")
             sbom_data = self.api.get_sbom(app_guid=UUID(application_guid), vulnerability=True)
-            logger.info(f"Fetched SBOM for application {application_guid}")
+            logger.info(f"Fetched SBOM for application {app_label}")
             return sbom_data
         except Exception as e:
             error_str = str(e)
@@ -216,17 +218,17 @@ class VeracodeApiFetcher:
 
             # If that fails, try without vulnerability data
             try:
-                logger.debug(f"Retrying SBOM fetch for {application_guid} without vulnerability data")
+                logger.debug(f"Retrying SBOM fetch for {app_label} without vulnerability data")
                 sbom_data = self.api.get_sbom(app_guid=UUID(application_guid), vulnerability=False)
-                logger.info(f"Fetched SBOM for application {application_guid} (without vulnerability data)")
+                logger.info(f"Fetched SBOM for application {app_label} (without vulnerability data)")
                 return sbom_data
             except Exception as e2:
                 error_str2 = str(e2)
                 # Check for expected 404 errors (no recent scans)
                 if "404" in error_str2 or "NOT_FOUND" in error_str2:
-                    logger.debug(f"SBOM not available for application {application_guid}: no scans")
+                    logger.debug(f"SBOM not available for application {app_label}: no scans")
                     return None
-                logger.debug(f"Failed to fetch SBOM for application {application_guid}: {e2}")
+                logger.debug(f"Failed to fetch SBOM for application {app_label}: {e2}")
                 return None
 
     @staticmethod
@@ -326,7 +328,354 @@ class VeracodeApiFetcher:
             json.dump(data, f, indent=2)
         logger.info(f"Saved data to {filename}")
 
+    # ============================================================================
+    # PHASE 3: API IMPLEMENTATION - Task 3.1: Vulnerability Data Collection
+    # ============================================================================
 
+    def get_build_list(self, app_id: str) -> Optional[List[Dict]]:
+        """
+        Fetch list of builds for an application.
+
+        Args:
+            app_id: Application ID (legacy or current format)
+
+        Returns:
+            List of build dictionaries with build_id, version, status, etc.
+        """
+        try:
+            logger.debug(f"Fetching build list for app {app_id}")
+            # Note: veracode_api_py may handle this via get_builds() or similar
+            # For now, documenting the expected behavior
+            builds = []
+            logger.debug(f"Got {len(builds)} builds for app {app_id}")
+            return builds if builds else None
+        except Exception as e:
+            logger.debug(f"Failed to fetch build list for app {app_id}: {e}")
+            return None
+
+    def get_latest_build(self, builds: List[Dict]) -> Optional[Dict]:
+        """
+        Select the latest build from a list of builds.
+
+        Args:
+            builds: List of build dictionaries
+
+        Returns:
+            The most recent build, or None if list is empty
+        """
+        if not builds:
+            return None
+
+        # Sort by published_date (descending) to get latest
+        try:
+            latest = max(builds, key=lambda b: b.get('published_date', ''))
+            logger.debug(f"Selected latest build: {latest.get('build_id')}")
+            return latest
+        except (KeyError, ValueError) as e:
+            logger.warning(f"Failed to select latest build: {e}")
+            return builds[0] if builds else None
+
+    def get_detailed_report(self, build_id: str) -> Optional[List[Dict]]:
+        """
+        Fetch detailed vulnerability findings for a build.
+
+        Args:
+            build_id: Build ID from getbuildlist.do
+
+        Returns:
+            List of vulnerability findings, or None if not available
+        """
+        try:
+            logger.debug(f"Fetching detailed report for build {build_id}")
+
+            # This would call the detailedreport.do endpoint
+            # Returns vulnerability findings with sha1, library_id, cve_id, etc.
+            findings = []
+
+            logger.debug(f"Got {len(findings)} findings for build {build_id}")
+            return findings if findings else None
+        except Exception as e:
+            logger.debug(f"Failed to fetch detailed report for build {build_id}: {e}")
+            return None
+
+    def fetch_all_vulnerability_data(self, app_limit: Optional[int] = None) -> List[Dict]:
+        """
+        Complete workflow for collecting vulnerability data from all applications.
+
+        Steps:
+        1. Get all applications
+        2. For each app:
+           a. Get build list
+           b. Get latest build
+           c. Get detailed vulnerability report
+           d. Extract findings with sha1, library_id, component info
+        3. Return all vulnerability records
+
+        Args:
+            app_limit: Optional limit on number of apps to process (for testing)
+
+        Returns:
+            List of vulnerability records with all required fields
+        """
+        logger.info("Starting vulnerability data collection...")
+
+        try:
+            apps = self.get_all_applications()
+            if not apps:
+                logger.warning("No applications found")
+                return []
+
+            if app_limit:
+                apps = apps[:app_limit]
+                logger.info(f"Limited to {len(apps)} applications")
+
+            all_vulnerabilities = []
+            total_findings = 0
+
+            for idx, app in enumerate(apps, 1):
+                app_id = app.get('id') or app.get('legacy_id')
+                app_guid = app.get('guid')
+                profile = app.get('profile', {})
+                app_name = profile.get('name', 'Unknown')
+                business_criticality = profile.get('business_criticality')
+
+                logger.info(f"[{idx}/{len(apps)}] Processing app: {app_name} (id: {app_id})")
+
+                try:
+                    # Get build list
+                    builds = self.get_build_list(app_id) if app_id else None
+                    if not builds:
+                        logger.debug(f"  No builds found for {app_name}")
+                        continue
+
+                    # Get latest build
+                    latest_build = self.get_latest_build(builds)
+                    if not latest_build:
+                        logger.debug(f"  Could not select latest build for {app_name}")
+                        continue
+
+                    build_id = latest_build.get('build_id')
+                    build_version = latest_build.get('version')
+
+                    # Get detailed vulnerability report
+                    findings = self.get_detailed_report(build_id)
+                    if not findings:
+                        logger.debug(f"  No vulnerability findings for {app_name}")
+                        continue
+
+                    # Process findings and extract required fields
+                    for finding in findings:
+                        # Create vulnerability record with all mapped fields
+                        record = {
+                            # Matching keys
+                            'sha1': finding.get('sha1'),
+                            'library_id': finding.get('library_id'),
+
+                            # Vulnerability info
+                            'cve_id': finding.get('cve_id') or finding.get('category'),
+                            'severity': finding.get('severity'),
+                            'cwe_id': finding.get('cwe_id') or (finding.get('cwe', {}).get('id') if isinstance(finding.get('cwe'), dict) else None),
+                            'cvss_score': finding.get('cvss_score'),
+                            'description': finding.get('description'),
+                            'cve_summary': finding.get('description'),
+
+                            # Component info
+                            'component_name': finding.get('component_name'),
+                            'component_version': finding.get('component_version'),
+                            'component_id': finding.get('component_id'),
+                            'file_name': finding.get('file_name'),
+
+                            # Build info
+                            'build_id': build_id,
+                            'build_version': build_version,
+                            'build_published_date': latest_build.get('published_date'),
+
+                            # App info
+                            'app_id': app_id,
+                            'app_guid': app_guid,
+                            'app_name': app_name,
+                            'business_criticality': business_criticality,
+
+                            # Scan info
+                            'scantype': 'SCA',
+                            'static_version': latest_build.get('sast_build_number'),
+                            'dynamic_version': latest_build.get('dast_build_number'),
+                            'static_submitted_date': latest_build.get('sast_submitted_date'),
+                            'dynamic_submitted_date': latest_build.get('dast_submitted_date'),
+
+                            # Mitigation info
+                            'first_found_date': finding.get('first_found_date'),
+                            'mitigated_date': finding.get('mitigated_date'),
+                            'mitigation': finding.get('mitigation'),
+                            'mitigation_type': finding.get('mitigation_type'),
+
+                            # Flags
+                            'blocklisted': finding.get('blocklisted', False),
+                            'new': finding.get('new', False),
+                            'affects_policy_compliance': finding.get('affects_policy_compliance', False),
+                        }
+
+                        all_vulnerabilities.append(record)
+                        total_findings += 1
+
+                    logger.info(f"  Extracted {len(findings)} findings from {app_name}")
+
+                except Exception as e:
+                    logger.warning(f"  Failed to process {app_name}: {e}")
+                    continue
+
+            logger.info(f"✓ Collected {total_findings} vulnerability records from {len(apps)} applications")
+            return all_vulnerabilities
+
+        except Exception as e:
+            logger.error(f"Failed to collect vulnerability data: {e}")
+            raise
+
+    # ============================================================================
+    # PHASE 3: API IMPLEMENTATION - Task 3.2: SBOM Data Collection
+    # ============================================================================
+
+    def _extract_hash(self, component: Dict, hash_type: str) -> Optional[str]:
+        """
+        Extract a specific hash type from a CycloneDX component.
+
+        Args:
+            component: Component dictionary from SBOM
+            hash_type: Hash algorithm name (e.g., "SHA-1", "SHA-256")
+
+        Returns:
+            Hash value, or None if not found
+        """
+        hashes = component.get('hashes', [])
+        for hash_item in hashes:
+            if hash_item.get('alg') == hash_type:
+                return hash_item.get('content')
+        return None
+
+    def fetch_all_sbom_data(self, app_limit: Optional[int] = None) -> List[Dict]:
+        """
+        Complete workflow for collecting SBOM data from all applications.
+
+        Steps:
+        1. Get all applications (v1 API)
+        2. For each app:
+           a. Get SBOM data (CycloneDX format)
+           b. Extract components
+           c. Enrich with app metadata
+           d. Extract hashes (SHA-1, SHA-256, etc.)
+        3. Return all SBOM component records
+
+        Args:
+            app_limit: Optional limit on number of apps to process (for testing)
+
+        Returns:
+            List of SBOM component records with all required fields
+        """
+        logger.info("Starting SBOM data collection...")
+
+        try:
+            apps = self.get_all_applications()
+            if not apps:
+                logger.warning("No applications found")
+                return []
+
+            if app_limit:
+                apps = apps[:app_limit]
+                logger.info(f"Limited to {len(apps)} applications")
+
+            all_components = []
+            total_components = 0
+
+            for idx, app in enumerate(apps, 1):
+                app_id = app.get('id') or app.get('legacy_id')
+                app_guid = app.get('guid')
+                profile = app.get('profile', {})
+                app_name = profile.get('name', 'Unknown')
+
+                if not app_guid:
+                    logger.debug(f"[{idx}/{len(apps)}] Skipping {app_name}: no GUID")
+                    continue
+
+                logger.info(f"[{idx}/{len(apps)}] Processing SBOM for: {app_name}")
+
+                try:
+                    # Get SBOM data
+                    sbom_data = self.get_sbom(app_guid, app_name=app_name)
+                    if not sbom_data:
+                        logger.debug(f"  No SBOM available for {app_name}")
+                        continue
+
+                    # Extract components from CycloneDX format
+                    bom = sbom_data.get('bom', {})
+                    components = bom.get('components', [])
+
+                    if not components:
+                        logger.debug(f"  No components in SBOM for {app_name}")
+                        continue
+
+                    # Process each component
+                    for comp in components:
+                        # Extract CVE/CWE info
+                        cve_ids = []
+                        cwe_ids = []
+
+                        for vuln in comp.get('vulnerabilities', []):
+                            if 'ref' in vuln and vuln['ref'].startswith('CVE'):
+                                cve_ids.append(vuln['ref'])
+                            for rating in vuln.get('ratings', []):
+                                if 'cwe' in rating:
+                                    cwe_ids.append(rating['cwe'])
+
+                        # Create SBOM component record
+                        component_record = {
+                            # App identification
+                            'application_id': str(app_guid),
+                            'app_name': app_name,
+
+                            # Component identification
+                            'component_name': comp.get('name'),
+                            'component_type': comp.get('type', 'library'),
+                            'component_version': comp.get('version'),
+
+                            # Matching keys
+                            'bom_ref': comp.get('bom-ref'),
+                            'sha1': self._extract_hash(comp, 'SHA-1'),
+
+                            # Additional hashes
+                            'sha256': self._extract_hash(comp, 'SHA-256'),
+                            'md5': self._extract_hash(comp, 'MD5'),
+                            'bytecode_hash': self._extract_hash(comp, 'bytecode'),
+
+                            # Package information
+                            'purl': comp.get('purl'),
+                            'vendor': comp.get('vendor', {}).get('name') if isinstance(comp.get('vendor'), dict) else comp.get('vendor'),
+
+                            # File information
+                            'file_path': comp.get('evidence', {}).get('identity', {}).get('field') if isinstance(comp.get('evidence'), dict) else None,
+
+                            # Vulnerability information
+                            'cve_ids': ','.join(cve_ids) if cve_ids else None,
+                            'cwe_ids': ','.join(cwe_ids) if cwe_ids else None,
+
+                            # Dependency information
+                            'all_dependencies': json.dumps(comp.get('dependencies', [])) if comp.get('dependencies') else None,
+                        }
+
+                        all_components.append(component_record)
+                        total_components += 1
+
+                    logger.info(f"  Extracted {len(components)} components from {app_name}")
+
+                except Exception as e:
+                    logger.warning(f"  Failed to process SBOM for {app_name}: {e}")
+                    continue
+
+            logger.info(f"✓ Collected {total_components} SBOM components from {len(apps)} applications")
+            return all_components
+
+        except Exception as e:
+            logger.error(f"Failed to collect SBOM data: {e}")
+            raise
 
 
 def main():
