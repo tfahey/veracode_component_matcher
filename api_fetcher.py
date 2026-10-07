@@ -141,6 +141,105 @@ class VeracodeApiFetcher:
             logger.error(f"Failed to initialize Veracode API client: {e}")
             raise
 
+        # Phase 5: Error Handling & Resilience Configuration
+        self._last_api_call_time: Optional[float] = None
+        self.max_retries: int = 3
+        self.backoff_factor: float = 2.0
+        self.request_timeout: int = 30
+        self.rate_limit_interval: float = 0.5
+        self.failed_apps: List[Dict] = []
+        self.total_retries: int = 0
+
+    def _apply_rate_limit(self, min_interval: float = None) -> None:
+        """Apply rate limiting between API calls to prevent hitting rate limits
+
+        Args:
+            min_interval: Minimum seconds between calls (default uses self.rate_limit_interval)
+        """
+        import time
+
+        interval = min_interval or self.rate_limit_interval
+        if self._last_api_call_time is not None:
+            elapsed = time.time() - self._last_api_call_time
+            if elapsed < interval:
+                wait_time = interval - elapsed
+                logger.debug(f"Rate limiting: waiting {wait_time:.2f}s before next API call")
+                time.sleep(wait_time)
+
+        self._last_api_call_time = time.time()
+
+    def _retry_api_call(self, func, max_retries: Optional[int] = None, backoff_factor: Optional[float] = None):
+        """Retry API calls with exponential backoff and Retry-After support
+
+        Handles:
+        - Exponential backoff for transient failures
+        - HTTP 429 (Rate Limit) with Retry-After header
+        - Network timeouts and temporary errors
+        - Preserves original exception on final failure
+
+        Args:
+            func: Callable that makes the API request
+            max_retries: Maximum number of retry attempts (default uses self.max_retries)
+            backoff_factor: Base for exponential backoff (default uses self.backoff_factor)
+
+        Returns:
+            Result of successful API call
+
+        Raises:
+            Exception: If all retries fail
+        """
+        import time
+
+        retries = max_retries or self.max_retries
+        factor = backoff_factor or self.backoff_factor
+
+        for attempt in range(retries):
+            try:
+                self._apply_rate_limit()
+                return func()
+            except Exception as e:
+                self.total_retries += 1
+                error_str = str(e)
+
+                if attempt == retries - 1:
+                    logger.error(f"All retry attempts failed ({retries} attempts): {e}")
+                    raise
+
+                # Check for rate limiting (HTTP 429) with Retry-After
+                wait_time = None
+                if '429' in error_str or 'rate limit' in error_str.lower():
+                    # Look for Retry-After value in error message
+                    if 'retry-after' in error_str.lower():
+                        try:
+                            # Try to extract retry-after value (may be in seconds or HTTP date)
+                            import re
+                            match = re.search(r'retry-after[:\s]+(\d+)', error_str, re.IGNORECASE)
+                            if match:
+                                wait_time = int(match.group(1))
+                                logger.warning(f"Rate limited (HTTP 429), respecting Retry-After: {wait_time}s")
+                        except Exception:
+                            pass
+
+                # Use exponential backoff if Retry-After not found
+                if wait_time is None:
+                    wait_time = factor ** attempt
+
+                logger.warning(f"API call failed (attempt {attempt + 1}/{retries}), "
+                             f"retrying in {wait_time}s: {e}")
+                time.sleep(wait_time)
+
+    def get_failure_summary(self) -> Dict:
+        """Get summary of failures and retries during data collection
+
+        Returns:
+            Dictionary with failure statistics
+        """
+        return {
+            'failed_apps': len(self.failed_apps),
+            'failed_apps_list': self.failed_apps,
+            'total_retries': self.total_retries,
+        }
+
     def get_all_applications(self) -> List[Dict]:
         """Fetch all applications from Veracode"""
         try:
