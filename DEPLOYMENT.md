@@ -1,5 +1,24 @@
 # Deployment Guide: Veracode Component Matcher
 
+## Status: Partial Implementation
+
+### ✅ Created and Ready
+- Configuration system (`config.py`, `config.json`)
+- Automated workflow runner (`run_automated.py`)
+- Workflow orchestration (`workflow.py`)
+- Core API fetcher (`api_fetcher.py`)
+- Environment variable support
+- CLI argument handling
+
+### ⚠️ Not Yet Created (Template Provided)
+- **Dockerfile** — Docker container image (template provided below)
+- **Kubernetes manifests** — ConfigMap, Job, CronJob files (templates provided below)
+- **CI/CD workflows** — GitHub Actions, GitLab CI examples (can be added)
+
+This guide provides templates and examples for these components. Create them as needed for your deployment environment.
+
+---
+
 ## Quick Start
 
 ### Prerequisites
@@ -118,7 +137,9 @@ python run_automated.py --verbose --log-file workflow.log
 
 ## Docker Deployment
 
-### Dockerfile
+### Dockerfile (Not Yet Created)
+
+⚠️ **Note**: A Dockerfile has not yet been created for this project. To add Docker support, create a `Dockerfile` in the project root with the following content:
 
 ```dockerfile
 FROM python:3.11-slim
@@ -139,7 +160,7 @@ VOLUME ["/app/exports", "/app/.cache"]
 CMD ["python", "run_automated.py", "--config", "config.json"]
 ```
 
-### Build and Run
+### Build and Run (When Dockerfile is Created)
 
 ```bash
 # Build image
@@ -163,7 +184,11 @@ docker run -v $(pwd)/config.json:/app/config.json \
 
 ## Kubernetes Deployment
 
-### ConfigMap (config.yaml)
+### ConfigMap (config.yaml) (Not Yet Created)
+
+⚠️ **Note**: Kubernetes manifests have not yet been created. Examples below show the recommended structure:
+
+### ConfigMap (config.yaml) Example
 
 ```yaml
 apiVersion: v1
@@ -178,7 +203,7 @@ data:
     }
 ```
 
-### Job (job.yaml)
+### Job (job.yaml) Example
 
 ```yaml
 apiVersion: batch/v1
