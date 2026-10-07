@@ -902,24 +902,67 @@ class VeracodeApiFetcher:
 
 
 def main():
-    """Fetch all apps, collect components, and match them"""
-    parser = argparse.ArgumentParser(description='Veracode API Data Fetcher')
+    """Fetch all apps, collect components, and match them with advanced options"""
+    parser = argparse.ArgumentParser(
+        description='Veracode API Data Fetcher - Comprehensive component collection and analysis',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Collect all data (default)
+  python api_fetcher.py --limit 5
+
+  # Collect vulnerabilities only
+  python api_fetcher.py --mode vuln --limit 5
+
+  # Collect SBOM only with custom output directory
+  python api_fetcher.py --mode sbom --output ./sbom_exports
+
+  # Export as JSON only
+  python api_fetcher.py --format json --limit 5
+
+  # List available credential profiles
+  python api_fetcher.py --list-profiles
+        """
+    )
+
+    # Credentials
     parser.add_argument('--veracode_api_key_id', help='Veracode API Key ID')
     parser.add_argument('--veracode_api_key_secret', help='Veracode API Key Secret')
-    parser.add_argument('--limit', type=int, help='Limit number of applications to process (for testing)')
+
+    # Collection options
+    parser.add_argument('--limit', type=int, help='Limit number of applications to process')
+    parser.add_argument('--mode', choices=['vuln', 'sbom', 'all'], default='all',
+                        help='What to collect: vulnerabilities, SBOM components, or both (default: all)')
+    parser.add_argument('--format', choices=['json', 'csv', 'both'], default='both',
+                        help='Export format: JSON, CSV, or both (default: both)')
+
+    # Output options
+    parser.add_argument('--output', default='.', help='Output directory for exports (default: current directory)')
+    parser.add_argument('--no-match', action='store_true', help='Skip vulnerability matching step')
+
+    # Utility options
     parser.add_argument('--list-profiles', action='store_true', help='List available credential profiles')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose logging')
 
     args = parser.parse_args()
+
+    # Adjust logging level if verbose requested
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
 
     # Handle --list-profiles
     if args.list_profiles:
         list_profiles()
         return
 
+    # Create output directory if needed
+    os.makedirs(args.output, exist_ok=True)
+    logger.info(f"Output directory: {args.output}")
+
     # Get limit if specified
     app_limit = args.limit
     if app_limit:
-        logger.info(f"Limiting to {app_limit} applications for testing")
+        logger.info(f"Limiting to {app_limit} applications")
 
     try:
         fetcher = VeracodeApiFetcher(api_id=args.veracode_api_key_id, api_key=args.veracode_api_key_secret)
@@ -936,16 +979,15 @@ def main():
         # Apply limit if specified
         if app_limit:
             apps = apps[:app_limit]
-            logger.info(f"Limited to {len(apps)} applications for testing")
+            logger.info(f"Limited to {len(apps)} applications")
 
         logger.debug(f"Sample app structure: {apps[0] if apps else 'No apps'}")
 
         all_sca_components = []
         all_sbom_components = []
 
-        # Process each application
+        # Process each application based on mode
         for idx, app in enumerate(apps):
-            # Try multiple possible keys for app name and ID
             app_id = app.get('id') or app.get('legacy_id') or app.get('app_id')
             app_name = app.get('name') or app.get('profile', {}).get('name') or 'Unknown'
             app_guid = app.get('guid') or app.get('application_guid')
@@ -958,8 +1000,8 @@ def main():
 
             logger.info(f"Processing app: {app_name} (GUID: {app_guid})")
 
-            # Get SCA components via build info using GUID
-            if app_guid:
+            # Get SCA components (if mode is 'vuln' or 'all')
+            if args.mode in ('vuln', 'all') and app_guid:
                 try:
                     build_info = fetcher.get_build_info(app_guid)
                     if build_info:
@@ -969,8 +1011,8 @@ def main():
                 except Exception as e:
                     logger.warning(f"  Failed to fetch SCA components for {app_name}: {e}")
 
-            # Get SBOM components
-            if app_guid:
+            # Get SBOM components (if mode is 'sbom' or 'all')
+            if args.mode in ('sbom', 'all') and app_guid:
                 try:
                     sbom_data = fetcher.get_sbom(app_guid)
                     if sbom_data:
@@ -983,27 +1025,61 @@ def main():
         logger.info(f"Total SCA components collected: {len(all_sca_components)}")
         logger.info(f"Total SBOM components collected: {len(all_sbom_components)}")
 
-        # Match components using established criteria
-        from vulnerability_matcher import VulnerabilityMatcher
+        # Export data
+        if args.mode in ('vuln', 'all') and all_sca_components:
+            if args.format in ('json', 'both'):
+                sca_json_path = os.path.join(args.output, 'all_sca_components.json')
+                with open(sca_json_path, 'w') as f:
+                    json.dump(all_sca_components, f, indent=2)
+                logger.info(f"Exported SCA JSON: {sca_json_path}")
 
-        matcher = VulnerabilityMatcher()
-        matcher.load_sbom_data(all_sbom_components)
-        matcher.load_sca_data(all_sca_components)
-        matcher.match_all()
+            if args.format in ('csv', 'both'):
+                vuln_csv_path = os.path.join(args.output, 'vulnerabilities.csv')
+                fetcher.export_vulnerability_csv(all_sca_components, vuln_csv_path)
+                logger.info(f"Exported vulnerability CSV: {vuln_csv_path}")
 
-        # Display results
-        matcher.print_summary()
+        if args.mode in ('sbom', 'all') and all_sbom_components:
+            if args.format in ('json', 'both'):
+                sbom_json_path = os.path.join(args.output, 'all_sbom_components.json')
+                with open(sbom_json_path, 'w') as f:
+                    json.dump(all_sbom_components, f, indent=2)
+                logger.info(f"Exported SBOM JSON: {sbom_json_path}")
 
-        # Export results
-        matcher.export_matched_csv('matched_components.csv')
-        matcher.export_unmatched_csv('unmatched_components.csv')
+            if args.format in ('csv', 'both'):
+                sbom_csv_path = os.path.join(args.output, 'sbom_components.csv')
+                fetcher.export_sbom_csv(all_sbom_components, sbom_csv_path)
+                logger.info(f"Exported SBOM CSV: {sbom_csv_path}")
 
-        # Save raw data
-        with open('all_sca_components.json', 'w') as f:
-            json.dump(all_sca_components, f, indent=2)
+        # Matching step (if enabled and both datasets available)
+        if not args.no_match and all_sca_components and all_sbom_components:
+            from vulnerability_matcher import VulnerabilityMatcher
 
-        with open('all_sbom_components.json', 'w') as f:
-            json.dump(all_sbom_components, f, indent=2)
+            logger.info("Running vulnerability matching...")
+            matcher = VulnerabilityMatcher()
+            matcher.load_sbom_data(all_sbom_components)
+            matcher.load_sca_data(all_sca_components)
+            matcher.match_all()
+
+            matcher.print_summary()
+
+            matched_path = os.path.join(args.output, 'matched_components.csv')
+            unmatched_path = os.path.join(args.output, 'unmatched_components.csv')
+            matcher.export_matched_csv(matched_path)
+            matcher.export_unmatched_csv(unmatched_path)
+            logger.info(f"Exported matching results to {args.output}")
+
+        # Summary
+        logger.info("=" * 80)
+        logger.info("Collection Complete")
+        logger.info(f"  SCA Components: {len(all_sca_components)}")
+        logger.info(f"  SBOM Components: {len(all_sbom_components)}")
+        logger.info(f"  Output Directory: {args.output}")
+        logger.info("=" * 80)
+
+        # Get failure summary if any retries occurred
+        failure_summary = fetcher.get_failure_summary()
+        if failure_summary['failed_apps'] > 0:
+            logger.warning(f"Failed Apps: {failure_summary['failed_apps']}, Total Retries: {failure_summary['total_retries']}")
 
     except Exception as e:
         logger.error(f"Error: {e}")
