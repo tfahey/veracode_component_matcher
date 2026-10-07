@@ -1,0 +1,25 @@
+{
+  "api": {
+    "max_retries": 3,
+    "backoff_factor": 2.0,
+    "request_timeout": 30,
+    "rate_limit_interval": 0.5,
+    "app_batch_size": 10,
+    "cache_dir": ".cache",
+    "cache_ttl_hours": 24
+  },
+  "export": {
+    "output_dir": "./exports",
+    "formats": ["json", "csv"],
+    "include_matching": true,
+    "include_raw_json": true,
+    "timestamp_exports": true,
+    "overwrite_existing": false
+  },
+  "log": {
+    "level": "INFO",
+    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    "file_output": null,
+    "verbose": false
+  }
+}
