@@ -1,0 +1,97 @@
+{
+  "statistics": {
+    "total_sbom_components": 5,
+    "total_sca_components": 5,
+    "matched_components": 5,
+    "unmatched_components": 0,
+    "match_gap_percentage": 0.0,
+    "matches_by_strategy": {
+      "sha1": 1,
+      "composite_key": 3,
+      "fuzzy_name": 1
+    }
+  },
+  "matched_details": [
+    {
+      "sbom_name": "log4j-core",
+      "sbom_version": "2.14.1",
+      "sbom_sha1": "abc123def456",
+      "sbom_purl": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+      "sbom_bom_ref": "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1",
+      "sca_name": "log4j-core",
+      "sca_version": "2.14.1",
+      "sca_sha1": "abc123def456",
+      "sca_library_id": "lib-001",
+      "match_strategy": "sha1",
+      "confidence": 1.0,
+      "cve_ids": [
+        "CVE-2021-44228"
+      ]
+    },
+    {
+      "sbom_name": "lodash",
+      "sbom_version": "4.17.21",
+      "sbom_sha1": "88d36f5051fb029ad5ef1119a73953f7add33fd9",
+      "sbom_purl": "pkg:npm/lodash@4.17.21",
+      "sbom_bom_ref": "pkg:npm/lodash@4.17.21",
+      "sca_name": "lodash",
+      "sca_version": "4.17.21",
+      "sca_sha1": null,
+      "sca_library_id": "lib-002",
+      "match_strategy": "composite_key",
+      "confidence": 1.0,
+      "cve_ids": [
+        "CVE-2021-23337"
+      ]
+    },
+    {
+      "sbom_name": "express",
+      "sbom_version": "4.18.0",
+      "sbom_sha1": "differentsha1value1234567890abcd",
+      "sbom_purl": null,
+      "sbom_bom_ref": "pkg:npm/express@4.18.0",
+      "sca_name": "express",
+      "sca_version": "4.18.0",
+      "sca_sha1": null,
+      "sca_library_id": "veracode-lib-express-4180",
+      "match_strategy": "composite_key",
+      "confidence": 1.0,
+      "cve_ids": [
+        "CVE-2021-12345"
+      ]
+    },
+    {
+      "sbom_name": "django",
+      "sbom_version": "3.2.0",
+      "sbom_sha1": null,
+      "sbom_purl": "pkg:pypi/django@3.2.0",
+      "sbom_bom_ref": "pkg:pypi/django@3.2.0",
+      "sca_name": "django",
+      "sca_version": "3.2.0",
+      "sca_sha1": null,
+      "sca_library_id": null,
+      "match_strategy": "composite_key",
+      "confidence": 1.0,
+      "cve_ids": [
+        "CVE-2022-12345"
+      ]
+    },
+    {
+      "sbom_name": "requests-http",
+      "sbom_version": "2.28.0",
+      "sbom_sha1": null,
+      "sbom_purl": "pkg:pypi/requests-http@2.28.0",
+      "sbom_bom_ref": "pkg:pypi/requests-http@2.28.0",
+      "sca_name": "requests",
+      "sca_version": "2.28.0",
+      "sca_sha1": null,
+      "sca_library_id": null,
+      "match_strategy": "fuzzy_name",
+      "confidence": 0.85,
+      "cve_ids": [
+        "CVE-2022-99999"
+      ]
+    }
+  ],
+  "unmatched_details": []
+}
