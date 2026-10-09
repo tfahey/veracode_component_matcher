@@ -341,6 +341,55 @@ class VeracodeApiFetcher:
                 result[element.tag][child.tag] = VeracodeApiFetcher._xml_to_dict(child)
         return result
 
+    def extract_sca_from_detailed_report(self, detailed_report: List[Dict]) -> List[Dict]:
+        """
+        Extract SCA component vulnerability data from detailed report findings
+
+        Args:
+            detailed_report: List of flaws from detailedreport.do
+
+        Returns:
+            List of SCA components with vulnerability details
+        """
+        components = []
+
+        if not detailed_report:
+            return components
+
+        logger.debug(f"extract_sca_from_detailed_report - input: {len(detailed_report)} flaws")
+
+        for flaw in detailed_report:
+            component_name = flaw.get('component_name')
+            component_version = flaw.get('component_version')
+
+            # Skip if not from software composition analysis
+            if not component_name:
+                continue
+
+            # Check if component already exists
+            component = next(
+                (c for c in components if c['component_name'] == component_name and c['component_version'] == component_version),
+                None
+            )
+
+            if not component:
+                component = {
+                    'component_name': component_name,
+                    'component_version': component_version,
+                    'sha1': flaw.get('sha1'),
+                    'component_id': flaw.get('id'),
+                    'library_id': flaw.get('library_id'),
+                    'severity': flaw.get('severity'),
+                    'cve_id': flaw.get('cve_id'),
+                    'cwe_id': flaw.get('cwe_id'),
+                    'cvss_score': flaw.get('cvss_score'),
+                    'description': flaw.get('description'),
+                }
+                components.append(component)
+
+        logger.debug(f"Extracted {len(components)} SCA components from detailed report")
+        return components
+
     def extract_sca_vulnerabilities(self, build_info: Dict) -> List[Dict]:
         """
         Extract SCA component vulnerability data from build info response
@@ -399,26 +448,57 @@ class VeracodeApiFetcher:
         """
         components = []
 
-        # CycloneDX format: metadata.component.components[]
-        bom = sbom_data.get('bom', {})
-        component_list = bom.get('components', [])
+        logger.debug(f"extract_sbom_components - SBOM keys: {list(sbom_data.keys()) if isinstance(sbom_data, dict) else 'not a dict'}")
+
+        # CycloneDX format can be:
+        # 1. Top-level components[] (most common)
+        # 2. bom.components[] (nested format)
+        # 3. metadata.component.components[] (alternative format)
+
+        # Try top-level components first
+        component_list = sbom_data.get('components', [])
+
+        # If empty, try nested format
+        if not component_list:
+            bom = sbom_data.get('bom', {})
+            component_list = bom.get('components', [])
+
+        # If still empty, try metadata format
+        if not component_list:
+            metadata = sbom_data.get('metadata', {})
+            component_data = metadata.get('component', {})
+            component_list = component_data.get('components', [])
+
+        logger.debug(f"Found {len(component_list)} components in SBOM")
 
         for comp in component_list:
             component = {
-                'name': comp.get('name'),
-                'version': comp.get('version'),
+                'component_name': comp.get('name'),
+                'component_version': comp.get('version'),
                 'purl': comp.get('purl'),
-                'bom-ref': comp.get('bom-ref'),
+                'bom_ref': comp.get('bom-ref'),
+                'component_type': comp.get('type'),
                 'hashes': {}
             }
 
             # Extract hashes if present
             if 'hashes' in comp:
                 for hash_item in comp.get('hashes', []):
-                    component['hashes'][hash_item.get('alg')] = hash_item.get('content')
+                    alg = hash_item.get('alg', '').lower()
+                    content = hash_item.get('content')
+                    if alg and content:
+                        component['hashes'][alg] = content
+                        # Also add as top-level fields for common hashes
+                        if alg == 'sha-1':
+                            component['sha1'] = content
+                        elif alg == 'sha-256':
+                            component['sha256'] = content
+                        elif alg == 'md5':
+                            component['md5'] = content
 
             components.append(component)
 
+        logger.debug(f"Extracted {len(components)} components from SBOM")
         return components
 
     def save_to_file(self, data: Dict, filename: str) -> None:
@@ -443,11 +523,67 @@ class VeracodeApiFetcher:
         """
         try:
             logger.debug(f"Fetching build list for app {app_id}")
-            # Note: veracode_api_py may handle this via get_builds() or similar
-            # For now, documenting the expected behavior
-            builds = []
-            logger.debug(f"Got {len(builds)} builds for app {app_id}")
-            return builds if builds else None
+            self._apply_rate_limit()
+
+            # Call getbuildlist.do endpoint
+            response = self.api.get_build_list(app_id)
+            logger.debug(f"get_build_list response type: {type(response)}")
+
+            if isinstance(response, bytes):
+                logger.debug(f"Parsing XML response (length: {len(response)} bytes)")
+                import xml.etree.ElementTree as ET
+
+                # DEBUG: Save response for inspection
+                with open('/tmp/buildlist_response.xml', 'wb') as f:
+                    f.write(response)
+                logger.debug("Saved buildlist XML to /tmp/buildlist_response.xml")
+
+                root = ET.fromstring(response)
+                logger.debug(f"XML root tag: {root.tag}")
+
+                # Check for error response
+                if root.tag == 'error' or (hasattr(root, 'find') and root.find('error') is not None):
+                    error_msg = root.text or ET.tostring(root, encoding='unicode')
+                    logger.debug(f"API returned an error response: {error_msg}")
+                    return None
+
+                # Convert XML to dict
+                result = self._xml_to_dict(root)
+                logger.debug(f"Converted XML to dict with keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
+
+                # Extract builds from buildlist structure
+                # Structure: {'buildlist': {'build': [...]}} or with namespace prefix
+                # First, get the buildlist dict (may have namespace in key)
+                buildlist_dict = None
+                for key in result.keys():
+                    if 'buildlist' in key:
+                        buildlist_dict = result[key]
+                        break
+
+                if buildlist_dict is None:
+                    buildlist_dict = result.get('buildlist', {})
+
+                builds = buildlist_dict.get('build', []) if isinstance(buildlist_dict, dict) else []
+
+                # If single build (dict), convert to list
+                if isinstance(builds, dict):
+                    builds = [builds]
+                elif not isinstance(builds, list):
+                    builds = []
+
+                logger.debug(f"Got {len(builds)} builds for app {app_id}")
+                return builds if builds else None
+
+            elif isinstance(response, dict):
+                logger.debug(f"Response is already a dict with keys: {list(response.keys())}")
+                return response if response else None
+            elif response is None:
+                logger.debug("Response is None")
+                return None
+            else:
+                logger.warning(f"Unexpected response type for build list: {type(response)}")
+                return None
+
         except Exception as e:
             logger.debug(f"Failed to fetch build list for app {app_id}: {e}")
             return None
@@ -476,23 +612,68 @@ class VeracodeApiFetcher:
 
     def get_detailed_report(self, build_id: str) -> Optional[List[Dict]]:
         """
-        Fetch detailed vulnerability findings for a build.
+        Fetch detailed vulnerability findings for a build via detailedreport.do.
 
         Args:
             build_id: Build ID from getbuildlist.do
 
         Returns:
-            List of vulnerability findings, or None if not available
+            List of vulnerability findings with detailed information, or None if not available
         """
         try:
             logger.debug(f"Fetching detailed report for build {build_id}")
+            self._apply_rate_limit()
 
-            # This would call the detailedreport.do endpoint
-            # Returns vulnerability findings with sha1, library_id, cve_id, etc.
-            findings = []
+            # Call detailedreport.do endpoint
+            response = self.api.get_detailed_report(build_id)
+            logger.debug(f"get_detailed_report response type: {type(response)}")
 
-            logger.debug(f"Got {len(findings)} findings for build {build_id}")
-            return findings if findings else None
+            if isinstance(response, bytes):
+                logger.debug(f"Parsing XML response (length: {len(response)} bytes)")
+                import xml.etree.ElementTree as ET
+
+                # DEBUG: Save response for inspection
+                with open(f'/tmp/detailedreport_{build_id}_response.xml', 'wb') as f:
+                    f.write(response)
+                logger.debug(f"Saved detailedreport XML to /tmp/detailedreport_{build_id}_response.xml")
+
+                root = ET.fromstring(response)
+                logger.debug(f"XML root tag: {root.tag}")
+
+                # Check for error response
+                if root.tag == 'error' or (hasattr(root, 'find') and root.find('error') is not None):
+                    error_msg = root.text or ET.tostring(root, encoding='unicode')
+                    logger.debug(f"API returned an error response: {error_msg}")
+                    return None
+
+                # Convert XML to dict
+                result = self._xml_to_dict(root)
+                logger.debug(f"Converted XML to dict with keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
+
+                # Extract findings from detailedreport structure
+                # Structure: {'detailedreport': {'category': {...}, 'flaw': [...]}}
+                detailedreport = result.get('detailedreport', result)
+                flaws = detailedreport.get('flaw', [])
+
+                # If single flaw (dict), convert to list
+                if isinstance(flaws, dict):
+                    flaws = [flaws]
+                elif not isinstance(flaws, list):
+                    flaws = []
+
+                logger.debug(f"Got {len(flaws)} findings for build {build_id}")
+                return flaws if flaws else None
+
+            elif isinstance(response, dict):
+                logger.debug(f"Response is already a dict with keys: {list(response.keys())}")
+                return response if response else None
+            elif response is None:
+                logger.debug("Response is None")
+                return None
+            else:
+                logger.warning(f"Unexpected response type for detailed report: {type(response)}")
+                return None
+
         except Exception as e:
             logger.debug(f"Failed to fetch detailed report for build {build_id}: {e}")
             return None

@@ -112,23 +112,36 @@ def collect_app_data(fetcher: VeracodeApiFetcher, app: dict) -> dict:
         'collection_time': datetime.now().isoformat(),
     }
 
-    # Collect SCA data
-    if app_guid:
+    # Collect SCA data via detailed report
+    if app_id:
         try:
-            logger.info("  Fetching SCA vulnerability data...")
-            build_info = fetcher.get_build_info(app_guid)
+            logger.info("  Fetching SCA vulnerability data via detailed report...")
 
-            if build_info:
-                sca_components = fetcher.extract_sca_vulnerabilities(build_info)
-                results['sca_components'] = sca_components
-                logger.info(f"  ✓ Collected {len(sca_components)} SCA components")
-                logger.debug(f"    SCA fields: {list(sca_components[0].keys()) if sca_components else []}")
+            # Get builds for this app
+            builds = fetcher.get_build_list(app_id)
+            if builds and len(builds) > 0:
+                # Get the most recent build
+                build_id = builds[0].get('build_id') if isinstance(builds[0], dict) else str(builds[0])
+                logger.debug(f"    Using build ID: {build_id}")
+
+                # Get detailed report for this build
+                detailed_report = fetcher.get_detailed_report(build_id)
+                if detailed_report:
+                    # Extract SCA components from detailed report
+                    sca_components = fetcher.extract_sca_from_detailed_report(detailed_report)
+                    results['sca_components'] = sca_components
+                    logger.info(f"  ✓ Collected {len(sca_components)} SCA components")
+                    if sca_components:
+                        logger.debug(f"    SCA fields: {list(sca_components[0].keys())}")
+                else:
+                    logger.warning("  ⚠ No detailed report found for SCA data")
             else:
-                logger.warning("  ⚠ No build info found for SCA data")
+                logger.warning("  ⚠ No builds found for SCA collection")
 
         except Exception as e:
             error_msg = f"Failed to fetch SCA data: {e}"
             logger.error(f"  ✗ {error_msg}")
+            logger.exception("Exception details:")
             results['errors'].append(error_msg)
 
     # Collect SBOM data
