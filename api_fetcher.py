@@ -1208,6 +1208,7 @@ Examples:
 
         all_sca_components = []
         all_sbom_components = []
+        app_metadata = []  # Track processed applications
 
         # Process each application based on mode
         for idx, app in enumerate(apps):
@@ -1222,6 +1223,13 @@ Examples:
                 continue
 
             logger.info(f"Processing app: {app_name} (GUID: {app_guid})")
+
+            # Track application metadata
+            app_metadata.append({
+                'app_profile_name': app_name,
+                'app_id': app_id,
+                'app_guid': app_guid
+            })
 
             # Get SCA components (if mode is 'vuln' or 'all')
             if args.mode in ('vuln', 'all') and app_id:
@@ -1259,6 +1267,7 @@ Examples:
 
         logger.info(f"Total SCA components collected: {len(all_sca_components)}")
         logger.info(f"Total SBOM components collected: {len(all_sbom_components)}")
+        logger.info(f"Total applications processed: {len(app_metadata)}")
 
         # Generate timestamp for filenames
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -1287,6 +1296,23 @@ Examples:
                 sbom_csv_path = os.path.join(args.output, f'sbom_components_{timestamp}.csv')
                 fetcher.export_sbom_csv(all_sbom_components, sbom_csv_path)
                 logger.info(f"Exported SBOM CSV: {sbom_csv_path}")
+
+        # Export application metadata (always, regardless of mode or format)
+        if app_metadata:
+            # Export as JSON
+            app_metadata_json_path = os.path.join(args.output, f'application_metadata_{timestamp}.json')
+            with open(app_metadata_json_path, 'w') as f:
+                json.dump(app_metadata, f, indent=2)
+            logger.info(f"Exported application metadata JSON: {app_metadata_json_path}")
+
+            # Export as CSV
+            import csv
+            app_metadata_csv_path = os.path.join(args.output, f'application_metadata_{timestamp}.csv')
+            with open(app_metadata_csv_path, 'w', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=['app_profile_name', 'app_id', 'app_guid'])
+                writer.writeheader()
+                writer.writerows(app_metadata)
+            logger.info(f"Exported application metadata CSV: {app_metadata_csv_path}")
 
         # Matching step (if enabled and both datasets available)
         if not args.no_match and all_sca_components and all_sbom_components:
