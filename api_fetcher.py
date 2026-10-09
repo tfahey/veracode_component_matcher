@@ -332,13 +332,45 @@ class VeracodeApiFetcher:
 
     @staticmethod
     def _xml_to_dict(element) -> Dict:
-        """Convert XML element to dictionary"""
-        result = {element.tag: {}}
+        """Convert XML element to dictionary, stripping namespaces and extracting attributes"""
+        # Strip namespace from tag
+        tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+
+        result = {tag: {}}
+
+        # First, add element's own attributes (if any)
+        if element.attrib:
+            # Strip namespace from attribute names too
+            for attr_key, attr_val in element.attrib.items():
+                attr_key = attr_key.split('}')[-1] if '}' in attr_key else attr_key
+                result[tag][attr_key] = attr_val
+
         for child in element:
+            # Strip namespace from child tag
+            child_tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+
             if len(child) == 0:
-                result[element.tag][child.tag] = child.text
+                # Leaf node - store attributes or text value
+                if child.attrib:
+                    value = child.attrib
+                else:
+                    value = child.text
             else:
-                result[element.tag][child.tag] = VeracodeApiFetcher._xml_to_dict(child)
+                # Parent node - recursively convert
+                child_dict = VeracodeApiFetcher._xml_to_dict(child)
+                value = child_dict.get(child_tag, child_dict)
+
+            # Handle multiple children with the same tag - convert to list
+            if child_tag in result[tag]:
+                # Already have this key - convert to list if needed
+                existing = result[tag][child_tag]
+                if isinstance(existing, list):
+                    existing.append(value)
+                else:
+                    result[tag][child_tag] = [existing, value]
+            else:
+                result[tag][child_tag] = value
+
         return result
 
     def extract_sca_from_detailed_report(self, detailed_report: List[Dict]) -> List[Dict]:
@@ -346,7 +378,7 @@ class VeracodeApiFetcher:
         Extract SCA component vulnerability data from detailed report findings
 
         Args:
-            detailed_report: List of flaws from detailedreport.do
+            detailed_report: List of SCA component dicts from software_composition_analysis
 
         Returns:
             List of SCA components with vulnerability details
@@ -354,38 +386,42 @@ class VeracodeApiFetcher:
         components = []
 
         if not detailed_report:
+            logger.debug("extract_sca_from_detailed_report - no input")
             return components
 
-        logger.debug(f"extract_sca_from_detailed_report - input: {len(detailed_report)} flaws")
+        logger.debug(f"extract_sca_from_detailed_report - input: {len(detailed_report)} components")
+        if detailed_report and len(detailed_report) > 0:
+            logger.debug(f"  First component keys: {list(detailed_report[0].keys())}")
+            logger.debug(f"  First component sample: {detailed_report[0]}")
 
-        for flaw in detailed_report:
-            component_name = flaw.get('component_name')
-            component_version = flaw.get('component_version')
+        for i, comp in enumerate(detailed_report):
+            # Extract fields from component attributes
+            # Component dict has: component_id, file_name, sha1, vulnerabilities, max_cvss_score, version, library, library_id, vendor, description, added_date, component_affects_policy_compliance
+            component_name = comp.get('library')
+            if i == 0:
+                logger.debug(f"  First comp library: {component_name}, type: {type(component_name)}")
+            component_version = comp.get('version')
 
-            # Skip if not from software composition analysis
+            # Skip if no library name
             if not component_name:
                 continue
 
-            # Check if component already exists
-            component = next(
-                (c for c in components if c['component_name'] == component_name and c['component_version'] == component_version),
-                None
-            )
-
-            if not component:
-                component = {
-                    'component_name': component_name,
-                    'component_version': component_version,
-                    'sha1': flaw.get('sha1'),
-                    'component_id': flaw.get('id'),
-                    'library_id': flaw.get('library_id'),
-                    'severity': flaw.get('severity'),
-                    'cve_id': flaw.get('cve_id'),
-                    'cwe_id': flaw.get('cwe_id'),
-                    'cvss_score': flaw.get('cvss_score'),
-                    'description': flaw.get('description'),
-                }
-                components.append(component)
+            # Each component is a unique record (no aggregation needed)
+            record = {
+                'component_name': component_name,
+                'component_version': component_version,
+                'component_id': comp.get('component_id'),
+                'file_name': comp.get('file_name'),
+                'sha1': comp.get('sha1'),
+                'library_id': comp.get('library_id'),
+                'vendor': comp.get('vendor'),
+                'description': comp.get('description'),
+                'max_cvss_score': comp.get('max_cvss_score'),
+                'vulnerabilities': comp.get('vulnerabilities'),
+                'added_date': comp.get('added_date'),
+                'affects_policy_compliance': comp.get('component_affects_policy_compliance'),
+            }
+            components.append(record)
 
         logger.debug(f"Extracted {len(components)} SCA components from detailed report")
         return components
@@ -552,23 +588,19 @@ class VeracodeApiFetcher:
                 logger.debug(f"Converted XML to dict with keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
 
                 # Extract builds from buildlist structure
-                # Structure: {'buildlist': {'build': [...]}} or with namespace prefix
-                # First, get the buildlist dict (may have namespace in key)
-                buildlist_dict = None
-                for key in result.keys():
-                    if 'buildlist' in key:
-                        buildlist_dict = result[key]
-                        break
+                # Structure: {'buildlist': {'build': [...]}}
+                buildlist = result.get('buildlist', {})
+                logger.debug(f"buildlist keys: {list(buildlist.keys()) if isinstance(buildlist, dict) else 'not a dict'}")
 
-                if buildlist_dict is None:
-                    buildlist_dict = result.get('buildlist', {})
-
-                builds = buildlist_dict.get('build', []) if isinstance(buildlist_dict, dict) else []
+                builds = buildlist.get('build', []) if isinstance(buildlist, dict) else []
+                logger.debug(f"builds type: {type(builds)}, value: {builds if isinstance(builds, list) else (builds if isinstance(builds, dict) else str(builds)[:100])}")
 
                 # If single build (dict), convert to list
                 if isinstance(builds, dict):
+                    logger.debug("Converting single build dict to list")
                     builds = [builds]
                 elif not isinstance(builds, list):
+                    logger.debug(f"builds is not list or dict: {type(builds)}")
                     builds = []
 
                 logger.debug(f"Got {len(builds)} builds for app {app_id}")
@@ -650,19 +682,21 @@ class VeracodeApiFetcher:
                 result = self._xml_to_dict(root)
                 logger.debug(f"Converted XML to dict with keys: {list(result.keys()) if isinstance(result, dict) else 'not a dict'}")
 
-                # Extract findings from detailedreport structure
-                # Structure: {'detailedreport': {'category': {...}, 'flaw': [...]}}
+                # Extract findings from software_composition_analysis section
+                # Structure: {'detailedreport': {'software_composition_analysis': {'vulnerable_components': {'component': [...]}}}}
                 detailedreport = result.get('detailedreport', result)
-                flaws = detailedreport.get('flaw', [])
+                sca = detailedreport.get('software_composition_analysis', {})
+                vuln_comps = sca.get('vulnerable_components', {})
+                components = vuln_comps.get('component', [])
 
-                # If single flaw (dict), convert to list
-                if isinstance(flaws, dict):
-                    flaws = [flaws]
-                elif not isinstance(flaws, list):
-                    flaws = []
+                # If single component (dict), convert to list
+                if isinstance(components, dict):
+                    components = [components]
+                elif not isinstance(components, list):
+                    components = []
 
-                logger.debug(f"Got {len(flaws)} findings for build {build_id}")
-                return flaws if flaws else None
+                logger.debug(f"Got {len(components)} SCA components for build {build_id}")
+                return components if components else None
 
             elif isinstance(response, dict):
                 logger.debug(f"Response is already a dict with keys: {list(response.keys())}")
