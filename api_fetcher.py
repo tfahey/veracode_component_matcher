@@ -684,7 +684,15 @@ class VeracodeApiFetcher:
 
                 # Extract findings from software_composition_analysis section
                 # Structure: {'detailedreport': {'software_composition_analysis': {'vulnerable_components': {'component': [...]}}}}
+                if not isinstance(result, dict):
+                    logger.debug(f"Result is not a dict: {type(result)}")
+                    return None
+
                 detailedreport = result.get('detailedreport', result)
+                if not isinstance(detailedreport, dict):
+                    logger.debug(f"Detailedreport is not a dict: {type(detailedreport)}")
+                    return None
+
                 sca = detailedreport.get('software_composition_analysis', {})
                 vuln_comps = sca.get('vulnerable_components', {})
                 components = vuln_comps.get('component', [])
@@ -1216,13 +1224,25 @@ Examples:
             logger.info(f"Processing app: {app_name} (GUID: {app_guid})")
 
             # Get SCA components (if mode is 'vuln' or 'all')
-            if args.mode in ('vuln', 'all') and app_guid:
+            if args.mode in ('vuln', 'all') and app_id:
                 try:
-                    build_info = fetcher.get_build_info(app_guid)
-                    if build_info:
-                        sca_components = fetcher.extract_sca_vulnerabilities(build_info)
-                        all_sca_components.extend(sca_components)
-                        logger.info(f"  Extracted {len(sca_components)} SCA components")
+                    # Get builds for this app
+                    builds = fetcher.get_build_list(app_id)
+                    if builds and len(builds) > 0:
+                        # Get the most recent build
+                        build_id = builds[0].get('build_id') if isinstance(builds[0], dict) else str(builds[0])
+                        logger.debug(f"    Using build ID: {build_id}")
+
+                        # Get detailed report for this build
+                        detailed_report = fetcher.get_detailed_report(build_id)
+                        if detailed_report:
+                            sca_components = fetcher.extract_sca_from_detailed_report(detailed_report)
+                            all_sca_components.extend(sca_components)
+                            logger.info(f"  Extracted {len(sca_components)} SCA components")
+                        else:
+                            logger.debug(f"    No detailed report found for build {build_id}")
+                    else:
+                        logger.debug(f"    No builds found for app {app_id}")
                 except Exception as e:
                     logger.warning(f"  Failed to fetch SCA components for {app_name}: {e}")
 
