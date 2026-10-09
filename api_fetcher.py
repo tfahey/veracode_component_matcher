@@ -1260,28 +1260,31 @@ Examples:
         logger.info(f"Total SCA components collected: {len(all_sca_components)}")
         logger.info(f"Total SBOM components collected: {len(all_sbom_components)}")
 
+        # Generate timestamp for filenames
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+
         # Export data
         if args.mode in ('vuln', 'all') and all_sca_components:
             if args.format in ('json', 'both'):
-                sca_json_path = os.path.join(args.output, 'all_sca_components.json')
+                sca_json_path = os.path.join(args.output, f'all_sca_components_{timestamp}.json')
                 with open(sca_json_path, 'w') as f:
                     json.dump(all_sca_components, f, indent=2)
                 logger.info(f"Exported SCA JSON: {sca_json_path}")
 
             if args.format in ('csv', 'both'):
-                vuln_csv_path = os.path.join(args.output, 'vulnerabilities.csv')
+                vuln_csv_path = os.path.join(args.output, f'vulnerabilities_{timestamp}.csv')
                 fetcher.export_vulnerability_csv(all_sca_components, vuln_csv_path)
                 logger.info(f"Exported vulnerability CSV: {vuln_csv_path}")
 
         if args.mode in ('sbom', 'all') and all_sbom_components:
             if args.format in ('json', 'both'):
-                sbom_json_path = os.path.join(args.output, 'all_sbom_components.json')
+                sbom_json_path = os.path.join(args.output, f'all_sbom_components_{timestamp}.json')
                 with open(sbom_json_path, 'w') as f:
                     json.dump(all_sbom_components, f, indent=2)
                 logger.info(f"Exported SBOM JSON: {sbom_json_path}")
 
             if args.format in ('csv', 'both'):
-                sbom_csv_path = os.path.join(args.output, 'sbom_components.csv')
+                sbom_csv_path = os.path.join(args.output, f'sbom_components_{timestamp}.csv')
                 fetcher.export_sbom_csv(all_sbom_components, sbom_csv_path)
                 logger.info(f"Exported SBOM CSV: {sbom_csv_path}")
 
@@ -1297,8 +1300,8 @@ Examples:
 
             matcher.print_summary()
 
-            matched_path = os.path.join(args.output, 'matched_components.csv')
-            unmatched_path = os.path.join(args.output, 'unmatched_components.csv')
+            matched_path = os.path.join(args.output, f'matched_components_{timestamp}.csv')
+            unmatched_path = os.path.join(args.output, f'unmatched_components_{timestamp}.csv')
             matcher.export_matched_csv(matched_path)
             matcher.export_unmatched_csv(unmatched_path)
             logger.info(f"Exported matching results to {args.output}")
