@@ -1,6 +1,6 @@
 # Veracode Component Matcher
 
-Fetches vulnerability data from Veracode's APIs across all applications and matches SCA components from `getbuildinfo.do` with SBOM data from the SBOM API endpoint, implementing multiple matching strategies to close data gaps.
+Fetches vulnerability data from Veracode's APIs across all applications and matches SCA components from `detailedreport.do` (software_composition_analysis section) with SBOM data from the CycloneDX SBOM API endpoint, implementing multiple matching strategies to close data gaps.
 
 ## Features
 
@@ -47,10 +47,17 @@ from vulnerability_matcher import VulnerabilityMatcher
 
 # Fetch data
 fetcher = VeracodeApiFetcher()
-build_info = fetcher.get_build_info(app_id="12345")
-sbom_data = fetcher.get_sbom_cyclonedx(application_guid="app-guid-here")
 
-sca_components = fetcher.extract_sca_vulnerabilities(build_info)
+# Get application and build list
+builds = fetcher.get_build_list(app_id="1301028")
+build_id = builds[0]['build_id']
+
+# Get SCA data from detailed report
+detailed_report = fetcher.get_detailed_report(build_id)
+sca_components = fetcher.extract_sca_from_detailed_report(detailed_report)
+
+# Get SBOM data
+sbom_data = fetcher.get_sbom(app_guid="6a747366-ed0d-490c-a069-39995c4ad7d6")
 sbom_components = fetcher.extract_sbom_components(sbom_data)
 
 # Match
@@ -60,9 +67,7 @@ matcher.load_sca_data(sca_components)
 matched, unmatched = matcher.match_all()
 
 # Report
-matcher.print_summary()
-matcher.export_matched_csv('matched.csv')
-matcher.export_unmatched_csv('unmatched.csv')
+print(f"Matched: {len(matched)}, Unmatched: {len(unmatched)}")
 ```
 
 ### Option 2: Use local JSON files
@@ -93,11 +98,14 @@ matcher.export_unmatched_csv('unmatched.csv')
 ### Command Line
 
 ```bash
-# Example with local data
-python vulnerability_matcher.py
+# Test single application
+python test_single_app.py "GitHub-Verademo"
 
-# Fetch and match in one go
-python api_fetcher.py  # Requires editing main() with app IDs
+# Test vulnerability matching with export data
+python test_vulnerability_matcher.py
+
+# Run all integration tests
+python test_phase_6_integration.py
 ```
 
 ## Matching Strategies
@@ -190,8 +198,9 @@ def _match_by_custom(self, component):
 ### Modify data extraction
 
 Update `api_fetcher.py` methods to handle different API response structures:
-- `extract_sca_vulnerabilities()` - Adjust for different build info formats
+- `extract_sca_from_detailed_report()` - Adjust SCA extraction from detailedreport.do
 - `extract_sbom_components()` - Adapt to different SBOM structures
+- `extract_sca_vulnerabilities()` - Legacy method for getbuildinfo.do (deprecated)
 
 ## Troubleshooting
 
