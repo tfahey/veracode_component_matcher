@@ -1,0 +1,66 @@
+# Environment and credentials
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+
+# Test and development data files
+test_*.json
+test_*.csv
+*_test.json
+*_test.csv
+http.json
+*.jsonl
+
+# Excel and spreadsheet files (data sensitivity)
+*.xlsx
+*.xls
+~$*.xlsx
+~$*.xls
+
+# Export and output directories (temporary test data)
+/export/
+/out/
+
+# Veracode credentials files
+credentials
+~/.veracode/
+
+# Temporary files
+*.tmp
+*.bak
+*.log
