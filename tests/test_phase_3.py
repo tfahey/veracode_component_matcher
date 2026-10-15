@@ -223,10 +223,12 @@ def test_phase_3(include_older_builds: bool = True):
             print("\n✅ PHASE 3 TEST PASSED - API methods working correctly")
 
             # Save results
-            with open('phase_3_test_results.json', 'w') as f:
+            results_file = 'tests/results/phase_3_test_results.json'
+            Path('tests/results').mkdir(parents=True, exist_ok=True)
+            with open(results_file, 'w') as f:
                 json.dump(results, f, indent=2)
 
-            logger.info("Test results saved to phase_3_test_results.json")
+            logger.info(f"Test results saved to {results_file}")
             return True
         else:
             print("\n⚠️  PHASE 3 TEST INCONCLUSIVE - No data returned from APIs")

@@ -64,3 +64,6 @@ credentials
 *.tmp
 *.bak
 *.log
+
+# Test results and output
+/tests/results/

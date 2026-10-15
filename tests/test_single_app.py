@@ -6,9 +6,9 @@ Tests api_fetcher.py against a specific application by name.
 Provides detailed logging and output for debugging.
 
 Run with:
-    python test_single_app.py "App Name"
-    python test_single_app.py "App Name" --verbose
-    python test_single_app.py "App Name" --verbose --output ./results
+    python tests/test_single_app.py "App Name"
+    python tests/test_single_app.py "App Name" --verbose
+    python tests/test_single_app.py "App Name" --output tests/results
 """
 
 import argparse
@@ -278,7 +278,7 @@ Examples:
 
     parser.add_argument('app_name', help='Application name to test')
     parser.add_argument('--verbose', action='store_true', help='Enable DEBUG logging')
-    parser.add_argument('--output', default='.', help='Output directory for exports (default: current)')
+    parser.add_argument('--output', default='tests/results', help='Output directory for exports (default: tests/results)')
     parser.add_argument('--log-file', help='Log output to file')
     parser.add_argument('--veracode_api_key_id', help='Veracode API Key ID')
     parser.add_argument('--veracode_api_key_secret', help='Veracode API Key Secret')

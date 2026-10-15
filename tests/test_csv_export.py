@@ -5,13 +5,13 @@ Test script for CSV export + vulnerability matching
 Uses sample JSON data (all_sca_components.json, all_sbom_components.json),
 runs vulnerability matching, and exports results to both CSV and JSON files.
 
-Output files:
+Output files (in tests/results/):
 - matched_components.csv: Successfully matched SBOM + SCA components
 - unmatched_components.csv: Components that could not be matched
 - test_csv_matcher_results.json: Detailed matching results with statistics
 
 Run with:
-    python test_csv_export.py
+    python tests/test_csv_export.py
 """
 
 import json
@@ -166,16 +166,19 @@ def test_csv_export():
     # Export results
     print("\n--- Step 3: Exporting Results ---")
 
+    # Create output directory
+    Path('tests/results').mkdir(parents=True, exist_ok=True)
+
     # CSV exports
     print("Exporting to CSV...")
-    csv_matched = 'matched_components.csv'
-    csv_unmatched = 'unmatched_components.csv'
+    csv_matched = 'tests/results/matched_components.csv'
+    csv_unmatched = 'tests/results/unmatched_components.csv'
     matcher.export_matched_csv(csv_matched)
     matcher.export_unmatched_csv(csv_unmatched)
 
     # JSON export
     print("Exporting detailed results to JSON...")
-    json_results = save_matcher_results(matcher)
+    json_results = save_matcher_results(matcher, 'tests/results/test_csv_matcher_results.json')
 
     # Display summary
     print("\n--- Step 4: Generating Summary ---")
