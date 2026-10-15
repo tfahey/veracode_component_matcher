@@ -292,16 +292,22 @@ rate_limit_interval = 1.0
 
 ### Test Coverage:
 
-1. **test_phase_5_error_handling.py**: Error handling validation
-   - Retry logic verification
-   - Timeout handling
-   - Rate limiting
-   - Graceful degradation
+Run the Phase 5 resilience tests:
 
-2. **Manual Testing**:
-   - Simulate API failures
-   - Verify retry behavior
-   - Check rate limiting
+```bash
+python tests/test_phase_5_resilience.py
+```
+
+Test validations include:
+- Retry logic verification
+- Timeout handling
+- Rate limiting
+- Graceful degradation
+
+### Manual Testing:
+- Simulate API failures
+- Verify retry behavior
+- Check rate limiting
    - Validate error logging
 
 ---

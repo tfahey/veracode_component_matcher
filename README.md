@@ -77,7 +77,7 @@ The simplest way to run the component matcher:
 python api_fetcher.py --output ./data
 
 # Test single application
-python test_single_app.py "GitHub-Verademo"
+python tests/test_single_app.py "GitHub-Verademo"
 
 # Run vulnerability matching on exported data
 python match_components.py
@@ -86,7 +86,7 @@ python match_components.py
 **What happens:**
 - `api_fetcher.py` fetches SCA components and SBOM data from all Veracode applications
 - Exports JSON files with component data to `./data/` directory
-- `test_single_app.py` tests a single application and exports results to `./export/`
+- `tests/test_single_app.py` tests a single application and exports results to `tests/results/`
 - `match_components.py` runs the matching engine and shows results
 
 **Output files created:**
@@ -173,9 +173,9 @@ python api_fetcher.py --veracode_api_key_id YOUR_ID --veracode_api_key_secret YO
 **Test single application:**
 ```bash
 # Export SCA and SBOM data for one app
-python test_single_app.py "GitHub-Verademo"
+python tests/test_single_app.py "GitHub-Verademo"
 
-# Results saved to export/ directory with timestamps
+# Results saved to tests/results/ directory with timestamps
 ```
 
 **Run component matching:**
@@ -186,9 +186,13 @@ python match_components.py
 # Displays match statistics and saves results to CSV
 ```
 
-**Run all integration tests:**
+**Run integration tests:**
 ```bash
-python test_phase_6_integration.py
+# Test component matching with sample data
+python tests/test_match_components.py
+
+# Run all phase 6 integration tests
+python tests/test_phase_6_integration.py
 ```
 
 ## Matching Strategies

@@ -532,7 +532,7 @@ spec:
 1. **Initial Setup**
    ```bash
    python api_fetcher.py --list-profiles
-   python test_phase_6_integration.py
+   python tests/test_phase_6_integration.py
    ```
 
 2. **Configure**

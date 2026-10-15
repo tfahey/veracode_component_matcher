@@ -292,7 +292,7 @@ python api_fetcher.py --verbose --limit 5
 
 ```bash
 # Run all integration tests
-python test_phase_6_integration.py
+python tests/test_phase_6_integration.py
 
 # Expected output
 ✅ 9/9 tests passed

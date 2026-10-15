@@ -174,14 +174,14 @@ fetcher.export_sbom_csv(components, 'sbom_export.csv')
 
 ## Testing Phase 4
 
-Test script `test_csv_export.py` validates Phase 4 export functionality:
+Test script `tests/test_csv_export.py` validates Phase 4 export functionality:
 
 ```bash
 # Run the test
-python test_csv_export.py
+python tests/test_csv_export.py
 
 # Verify output files
-ls -la matched_components.csv unmatched_components.csv test_csv_matcher_results.json
+ls -la tests/results/matched_components.csv tests/results/unmatched_components.csv tests/results/test_csv_matcher_results.json
 ```
 
 **Output Files**:

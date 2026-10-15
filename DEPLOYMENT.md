@@ -322,7 +322,7 @@ python -m pytest test_*.py -v
 ### Integration Tests
 
 ```bash
-python test_phase_6_integration.py
+python tests/test_phase_6_integration.py
 ```
 
 ### Health Check

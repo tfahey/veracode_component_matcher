@@ -236,13 +236,13 @@ python3 api_fetcher.py --limit 5
 
 ```bash
 # Test single application with new SCA extraction
-python test_single_app.py "GitHub-Verademo"
+python tests/test_single_app.py "GitHub-Verademo"
 
 # Test vulnerability matching with extracted data
 python match_components.py
 
 # Run all integration tests
-python test_phase_6_integration.py
+python tests/test_phase_6_integration.py
 ```
 
 ### Files Modified
