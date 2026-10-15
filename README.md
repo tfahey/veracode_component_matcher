@@ -22,20 +22,78 @@ Fetches vulnerability data from Veracode's APIs across all applications and matc
   - Support for both API fetching and local JSON data
   - Configurable matching thresholds
 
-## Installation
+## Installation & Setup
+
+### Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Setup
+### Configure Credentials
 
-Create a `.env` file with your Veracode credentials:
+Choose one of these methods (in order of precedence):
 
+**Option A: Environment Variables (recommended for CI/CD)**
+```bash
+export VERACODE_API_KEY_ID=your_api_id
+export VERACODE_API_KEY_SECRET=your_api_secret
+python api_fetcher.py
 ```
-VERACODE_API_ID=your_api_id
-VERACODE_API_KEY=your_api_key
+
+**Option B: .env File (recommended for local development)**
+```bash
+# Create .env in project directory
+echo "VERACODE_API_KEY_ID=your_api_id" > .env
+echo "VERACODE_API_KEY_SECRET=your_api_secret" >> .env
+python api_fetcher.py
 ```
+
+**Option C: Credentials File (system default)**
+```bash
+# Create ~/.veracode/credentials file
+mkdir -p ~/.veracode
+cat > ~/.veracode/credentials << EOF
+[default]
+veracode_api_key_id = your_api_id
+veracode_api_key_secret = your_api_secret
+EOF
+python api_fetcher.py
+```
+
+**Option D: Command-Line Arguments (least preferred)**
+```bash
+python api_fetcher.py --veracode_api_key_id YOUR_ID --veracode_api_key_secret YOUR_SECRET
+```
+
+⚠️ **Security note**: Never commit `.env` file to git (it's in `.gitignore`)
+
+## Quick Start (Command Line)
+
+The simplest way to run the component matcher:
+
+```bash
+# Fetch SCA/SBOM data from all applications and match components
+python api_fetcher.py --output ./data
+
+# Test single application
+python test_single_app.py "GitHub-Verademo"
+
+# Run vulnerability matching on exported data
+python test_vulnerability_matcher.py
+```
+
+**What happens:**
+- `api_fetcher.py` fetches SCA components and SBOM data from all Veracode applications
+- Exports JSON files with component data to `./data/` directory
+- `test_single_app.py` tests a single application and exports results to `./export/`
+- `test_vulnerability_matcher.py` runs the matching engine and shows results
+
+**Output files created:**
+- `all_sca_components.json` - Raw SCA vulnerability data
+- `all_sbom_components.json` - Raw SBOM component data
+- `matched_components.csv` - Components matched across SCA/SBOM
+- `unmatched_components.csv` - Components in only one source
 
 ## Usage
 
@@ -95,16 +153,41 @@ matcher.export_matched_csv('matched.csv')
 matcher.export_unmatched_csv('unmatched.csv')
 ```
 
-### Command Line
+### Command Line - Detailed
 
+**Fetch data from all applications:**
 ```bash
-# Test single application
+# Fetch all applications (uses credentials from .env or ~/.veracode/credentials)
+python api_fetcher.py
+
+# Fetch and save to custom directory
+python api_fetcher.py --output ./my_data
+
+# Fetch only first N applications (useful for testing)
+python api_fetcher.py --limit 5
+
+# Use specific API credentials
+python api_fetcher.py --veracode_api_key_id YOUR_ID --veracode_api_key_secret YOUR_SECRET
+```
+
+**Test single application:**
+```bash
+# Export SCA and SBOM data for one app
 python test_single_app.py "GitHub-Verademo"
 
-# Test vulnerability matching with export data
+# Results saved to export/ directory with timestamps
+```
+
+**Run component matching:**
+```bash
+# Match exported SCA and SBOM data
 python test_vulnerability_matcher.py
 
-# Run all integration tests
+# Displays match statistics and saves results to CSV
+```
+
+**Run all integration tests:**
+```bash
 python test_phase_6_integration.py
 ```
 
@@ -204,6 +287,44 @@ Update `api_fetcher.py` methods to handle different API response structures:
 
 ## Troubleshooting
 
+### Command-Line Issues
+
+**"ModuleNotFoundError: No module named 'veracode_api_py'"**
+```bash
+# Install dependencies
+pip install -r requirements.txt
+```
+
+**"API credentials are invalid or expired"**
+```bash
+# Check your credentials are correct
+# Option 1: Verify .env file
+cat .env
+
+# Option 2: Verify environment variables
+echo $VERACODE_API_KEY_ID
+echo $VERACODE_API_KEY_SECRET
+
+# Option 3: Verify credentials file
+cat ~/.veracode/credentials
+```
+
+**"No module named 'api_fetcher'"**
+```bash
+# Run from project root directory
+cd /path/to/veracode_component_matcher
+python api_fetcher.py
+```
+
+**"Permission denied" when running script**
+```bash
+# Make script executable
+chmod +x api_fetcher.py
+python api_fetcher.py  # or use python explicitly
+```
+
+### Data Issues
+
 **High unmatched percentage?**
 - Check SBOM and SCA are from the same application/build
 - Verify API endpoints are returning expected data structures
@@ -214,7 +335,7 @@ Update `api_fetcher.py` methods to handle different API response structures:
 - Increase required version match precision
 
 **API authentication errors?**
-- Verify `.env` credentials are correct
+- Verify credentials are correct for your Veracode account
 - Check API ID/key have appropriate permissions
 - Ensure endpoints are accessible from your network
 
