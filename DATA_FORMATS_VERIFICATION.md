@@ -22,7 +22,7 @@ All test scripts have been verified to use comprehensive CSV and JSON data forma
 
 ---
 
-### 2. test_vulnerability_matcher.py
+### 2. match_components.py
 **Purpose**: Vulnerability matching engine validation
 
 **Data Usage**:
@@ -186,7 +186,7 @@ Test Scripts Validation
 | Test Script | Input Format | Output Format | Status |
 |------------|--------------|---------------|--------|
 | test_phase_3.py | API → JSON | JSON, summary | ✅ Pass |
-| test_vulnerability_matcher.py | JSON (full fields) | JSON results | ✅ Pass |
+| match_components.py | JSON (full fields) | JSON results | ✅ Pass |
 | test_csv_export.py | JSON (full fields) | CSV, JSON | ✅ Pass |
 | test_phase_4_export.py | JSON (full fields) | CSV, JSON | ✅ Pass |
 

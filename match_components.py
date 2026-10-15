@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Test script for vulnerability_matcher.py
+Component matching script for vulnerability_matcher.py
 
-Tests the component matching engine using sample data generated from
-api_fetcher.py outputs (all_sca_components.json, all_sbom_components.json).
+Matches SCA components with SBOM data using data exported from api_fetcher.py
+(all_sca_components.json, all_sbom_components.json).
 
 Run with:
-    python test_vulnerability_matcher.py
+    python match_components.py
 """
 
 import json
@@ -43,11 +43,11 @@ def load_sample_data(sbom_file: str, sca_file: str):
     return sbom_data, sca_data
 
 
-def test_vulnerability_matcher():
-    """Test vulnerability matching with sample data"""
+def match_components():
+    """Match SCA and SBOM components from exported data"""
 
     print("\n" + "="*80)
-    print("VULNERABILITY MATCHER TEST - Using api_fetcher Export Data")
+    print("COMPONENT MATCHING - Using api_fetcher Export Data")
     print("="*80 + "\n")
 
     # Load sample data from api_fetcher exports (direct from export/ folder)
@@ -160,10 +160,10 @@ def test_vulnerability_matcher():
         'unmatched_count': len(unmatched),
     }
 
-    with open('test_vulnerability_matcher_results.json', 'w') as f:
+    with open('match_components_results.json', 'w') as f:
         json.dump(results, f, indent=2)
 
-    print(f"✓ Results saved to test_vulnerability_matcher_results.json")
+    print(f"✓ Results saved to match_components_results.json")
 
     # Summary
     print("\n" + "="*80)
@@ -179,5 +179,5 @@ def test_vulnerability_matcher():
 
 
 if __name__ == '__main__':
-    success = test_vulnerability_matcher()
+    success = match_components()
     exit(0 if success else 1)

@@ -202,13 +202,13 @@ python3 api_fetcher.py --limit 5
 - Updated SBOM loading to use `component_name`/`component_version` from api_fetcher exports
 - Location: vulnerability_matcher.py, `load_sbom_data()` and `load_sca_data()` methods
 
-### Updated test_vulnerability_matcher.py
+### Updated match_components.py
 
 - Removed manual field mapping code (vulnerability_matcher handles it)
 - Now loads directly from api_fetcher export files
 - Auto-discovers most recent export files using glob
 - Results: 43 matched components, 66 unmatched, 39.4% match rate
-- Location: test_vulnerability_matcher.py
+- Location: match_components.py
 
 ### Test Results
 
@@ -239,7 +239,7 @@ python3 api_fetcher.py --limit 5
 python test_single_app.py "GitHub-Verademo"
 
 # Test vulnerability matching with extracted data
-python test_vulnerability_matcher.py
+python match_components.py
 
 # Run all integration tests
 python test_phase_6_integration.py
@@ -249,6 +249,6 @@ python test_phase_6_integration.py
 
 - `api_fetcher.py`: Fixed XML parsing, updated get_detailed_report() and extract_sca_from_detailed_report()
 - `vulnerability_matcher.py`: Added flexible field name mapping
-- `test_vulnerability_matcher.py`: Updated to use api_fetcher exports directly
+- `match_components.py`: Updated to use api_fetcher exports directly
 - `README.md`: Updated usage examples and API source documentation
 

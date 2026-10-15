@@ -80,14 +80,14 @@ python api_fetcher.py --output ./data
 python test_single_app.py "GitHub-Verademo"
 
 # Run vulnerability matching on exported data
-python test_vulnerability_matcher.py
+python match_components.py
 ```
 
 **What happens:**
 - `api_fetcher.py` fetches SCA components and SBOM data from all Veracode applications
 - Exports JSON files with component data to `./data/` directory
 - `test_single_app.py` tests a single application and exports results to `./export/`
-- `test_vulnerability_matcher.py` runs the matching engine and shows results
+- `match_components.py` runs the matching engine and shows results
 
 **Output files created:**
 - `all_sca_components.json` - Raw SCA vulnerability data
@@ -181,7 +181,7 @@ python test_single_app.py "GitHub-Verademo"
 **Run component matching:**
 ```bash
 # Match exported SCA and SBOM data
-python test_vulnerability_matcher.py
+python match_components.py
 
 # Displays match statistics and saves results to CSV
 ```
