@@ -7,6 +7,7 @@ Provides detailed logging and output for debugging.
 
 Run with:
     python tests/test_single_app.py "App Name"
+    python tests/test_single_app.py <app_id or app_guid>
     python tests/test_single_app.py "App Name" --verbose
     python tests/test_single_app.py "App Name" --output tests/results
 """
@@ -18,6 +19,13 @@ import sys
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+from uuid import UUID
+
+# Add parent directory to path so we can import project modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from veracode_api_py import Applications
 
 from api_fetcher import VeracodeApiFetcher
 
@@ -55,40 +63,76 @@ def setup_logging(verbose: bool = False, log_file: str = None):
         logger.debug("DEBUG logging enabled")
 
 
-def find_application(fetcher: VeracodeApiFetcher, app_name: str) -> dict:
-    """Find application by name"""
-    logger.info(f"Searching for application: '{app_name}'")
+def _app_display_name(app: dict) -> str:
+    return app.get('name') or app.get('profile', {}).get('name') or 'Unknown'
 
-    apps = fetcher.get_all_applications()
-    if not apps:
-        logger.error("No applications found in Veracode")
+
+def _app_org_id(app: dict) -> Optional[int]:
+    org_id = app.get('organization_id') or app.get('oid')
+    return int(org_id) if org_id is not None else None
+
+
+def _find_by_id_or_guid(lookup: str) -> Optional[dict]:
+    """Direct API lookup by legacy app ID or GUID; avoids listing every application."""
+    try:
+        if lookup.isdigit():
+            logger.info(f"Looking up app ID {lookup}...")
+            response = Applications().get(legacy_id=int(lookup))
+            apps = (response or {}).get('_embedded', {}).get('applications', [])
+            return apps[0] if apps else None
+        try:
+            guid = UUID(lookup)
+        except ValueError:
+            return None
+        logger.info(f"Looking up app GUID {guid}...")
+        app = Applications().get(guid=guid)
+        return app if isinstance(app, dict) and app.get('guid') else None
+    except Exception as e:
+        logger.debug(f"ID/GUID lookup failed for '{lookup}': {e}")
         return None
 
-    logger.debug(f"Found {len(apps)} total applications")
 
-    # Exact match first
+def find_application(app_name: str, org_id: Optional[int] = None) -> Optional[dict]:
+    """Find application by app ID, GUID, or name (optionally restricted to an organization ID)"""
+    lookup = app_name.strip()
+    logger.info(f"Searching for application: '{lookup}'" + (f" in org {org_id}" if org_id else ""))
+
+    app = _find_by_id_or_guid(lookup)
+    if app:
+        logger.info(f"✓ Found by ID/GUID: {_app_display_name(app)}")
+        if org_id and _app_org_id(app) != org_id:
+            logger.warning(f"App belongs to org {_app_org_id(app)}, not --org-id {org_id}")
+        return app
+
+    # Server-side name filter instead of fetching all applications
+    try:
+        response = Applications().get_by_name(lookup)
+    except Exception as e:
+        logger.error(f"Name lookup failed: {e}")
+        return None
+    apps: list = [a for a in response if isinstance(a, dict)] if isinstance(response, list) else []
+    logger.debug(f"Name search returned {len(apps)} applications")
+
+    if org_id:
+        apps = [a for a in apps if _app_org_id(a) == org_id]
+        logger.debug(f"{len(apps)} applications in org {org_id}")
+
+    # Exact name match
     for app in apps:
-        app_display_name = app.get('name') or app.get('profile', {}).get('name') or 'Unknown'
-        if app_display_name.lower() == app_name.lower():
-            logger.info(f"✓ Found exact match: {app_display_name}")
+        if _app_display_name(app).lower() == lookup.lower():
+            logger.info(f"✓ Found exact match: {_app_display_name(app)}")
             return app
 
     # Partial match
-    matches = []
-    for app in apps:
-        app_display_name = app.get('name') or app.get('profile', {}).get('name') or 'Unknown'
-        if app_name.lower() in app_display_name.lower():
-            matches.append((app_display_name, app))
-
+    matches = [a for a in apps if lookup.lower() in _app_display_name(a).lower()]
     if matches:
         logger.warning(f"No exact match found. Found {len(matches)} partial matches:")
-        for display_name, app in matches[:5]:
-            logger.warning(f"  - {display_name}")
-        if matches:
-            logger.info(f"Using first match: {matches[0][0]}")
-            return matches[0][1]
+        for app in matches[:5]:
+            logger.warning(f"  - {_app_display_name(app)} (app ID {app.get('id')}, org {_app_org_id(app)})")
+        logger.info(f"Using first match: {_app_display_name(matches[0])}")
+        return matches[0]
 
-    logger.error(f"Application '{app_name}' not found")
+    logger.error(f"Application '{lookup}' not found")
     return None
 
 
@@ -108,6 +152,7 @@ def collect_app_data(fetcher: VeracodeApiFetcher, app: dict) -> dict:
         'app_guid': app_guid,
         'sca_components': [],
         'sbom_components': [],
+        'sbom_unavailable_reason': None,
         'errors': [],
         'collection_time': datetime.now().isoformat(),
     }
@@ -120,15 +165,19 @@ def collect_app_data(fetcher: VeracodeApiFetcher, app: dict) -> dict:
             # Get builds for this app
             builds = fetcher.get_build_list(app_id)
             if builds and len(builds) > 0:
-                # Get the most recent build
-                build_id = builds[0].get('build_id') if isinstance(builds[0], dict) else str(builds[0])
-                logger.debug(f"    Using build ID: {build_id}")
+                # Get the most recent build (latest is last in chronologically-ordered list)
+                build_dict = builds[-1] if isinstance(builds[-1], dict) else {}
+                build_id = build_dict.get('build_id') if isinstance(build_dict, dict) else str(builds[-1])
+                build_date = build_dict.get('policy_updated_date')
+                logger.debug(f"    Using build ID: {build_id}, date: {build_date}")
 
                 # Get detailed report for this build
                 detailed_report = fetcher.get_detailed_report(build_id)
                 if detailed_report:
                     # Extract SCA components from detailed report
-                    sca_components = fetcher.extract_sca_from_detailed_report(detailed_report)
+                    sca_components = fetcher.extract_sca_from_detailed_report(
+                        detailed_report, app_id=app_id, app_guid=app_guid,
+                        build_id=build_id, build_date=build_date, app_name=app_name)
                     results['sca_components'] = sca_components
                     logger.info(f"  ✓ Collected {len(sca_components)} SCA components")
                     if sca_components:
@@ -148,15 +197,17 @@ def collect_app_data(fetcher: VeracodeApiFetcher, app: dict) -> dict:
     if app_guid:
         try:
             logger.info("  Fetching SBOM component data...")
-            sbom_data_raw = fetcher.get_sbom(app_guid)
+            sbom_components, unavailable_reason = fetcher.collect_app_sbom_components(
+                app_id, app_guid, app_name=app_name)
 
-            if sbom_data_raw:
-                sbom_components = fetcher.extract_sbom_components(sbom_data_raw)
+            if sbom_components:
                 results['sbom_components'] = sbom_components
-                logger.info(f"  ✓ Collected {len(sbom_components)} SBOM components")
-                logger.debug(f"    SBOM fields: {list(sbom_components[0].keys()) if sbom_components else []}")
+                sources = sorted({c.get('sbom_source') for c in sbom_components})
+                logger.info(f"  ✓ Collected {len(sbom_components)} SBOM components from: {', '.join(sources)}")
+                logger.debug(f"    SBOM fields: {list(sbom_components[0].keys())}")
             else:
-                logger.warning("  ⚠ No SBOM data found")
+                results['sbom_unavailable_reason'] = unavailable_reason
+                logger.warning(f"  ⚠ No SBOM data found: {unavailable_reason}")
 
         except Exception as e:
             error_msg = f"Failed to fetch SBOM data: {e}"
@@ -220,6 +271,8 @@ def print_summary(results: dict):
     print(f"\nData Collected:")
     print(f"  SCA Components: {len(results['sca_components'])}")
     print(f"  SBOM Components: {len(results['sbom_components'])}")
+    if results.get('sbom_unavailable_reason'):
+        print(f"  SBOM Unavailable: {results['sbom_unavailable_reason']}")
 
     if results['sca_components']:
         print(f"\n  SCA Sample (first record):")
@@ -263,20 +316,28 @@ def main():
         epilog="""
 Examples:
   # Test with application name
-  python test_single_app.py "My Application"
+  python tests/test_single_app.py "My Application"
+
+  # Test with application ID or GUID
+  python tests/test_single_app.py 1301028
+  python tests/test_single_app.py 6a747366-ed0d-490c-a069-39995c4ad7d6
+
+  # Restrict a name search to one organization (useful for proxy accounts)
+  python tests/test_single_app.py "Payments" --org-id 12345
 
   # Test with verbose logging
-  python test_single_app.py "My Application" --verbose
+  python tests/test_single_app.py "My Application" --verbose
 
   # Test with custom output directory
-  python test_single_app.py "My Application" --verbose --output ./test_results
+  python tests/test_single_app.py "My Application" --verbose --output ./test_results
 
   # Test with log file
-  python test_single_app.py "My Application" --verbose --log-file app_test.log
+  python tests/test_single_app.py "My Application" --verbose --log-file app_test.log
         """
     )
 
-    parser.add_argument('app_name', help='Application name to test')
+    parser.add_argument('app_name', help='Application name, app ID, or app GUID to test')
+    parser.add_argument('--org-id', type=int, help='Only match applications in this organization ID')
     parser.add_argument('--verbose', action='store_true', help='Enable DEBUG logging')
     parser.add_argument('--output', default='tests/results', help='Output directory for exports (default: tests/results)')
     parser.add_argument('--log-file', help='Log output to file')
@@ -301,7 +362,7 @@ Examples:
         )
 
         # Find application
-        app = find_application(fetcher, args.app_name)
+        app = find_application(args.app_name, org_id=args.org_id)
         if not app:
             logger.error("Test failed: Application not found")
             return 1

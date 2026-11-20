@@ -21,6 +21,9 @@ import tempfile
 import time
 from pathlib import Path
 
+# Add parent directory to path so we can import project modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from api_fetcher import VeracodeApiFetcher
 from vulnerability_matcher import VulnerabilityMatcher
 

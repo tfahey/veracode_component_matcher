@@ -15,6 +15,7 @@ import configparser
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 from veracode_api_py.api import VeracodeAPI as vapi
+from veracode_api_py import Applications, SBOM, SCAApplications
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -148,6 +149,7 @@ class VeracodeApiFetcher:
         self.request_timeout: int = 30
         self.rate_limit_interval: float = 0.5
         self.failed_apps: List[Dict] = []
+        self.sbom_errors: Dict[str, str] = {}  # app GUID -> reason the application SBOM was unavailable
         self.total_retries: int = 0
 
     def _apply_rate_limit(self, min_interval: float = None) -> None:
@@ -250,6 +252,22 @@ class VeracodeApiFetcher:
             logger.error(f"Failed to fetch applications: {e}")
             raise
 
+    def get_applications(self, name: Optional[str] = None, org_id: Optional[int] = None) -> List[Dict]:
+        """Fetch applications, optionally filtered by partial name (server-side) and organization ID."""
+        if name:
+            response = Applications().get_by_name(name)
+            apps = [a for a in response if isinstance(a, dict)] if isinstance(response, list) else []
+            logger.info(f"Found {len(apps)} applications matching name '{name}'")
+        else:
+            if org_id:
+                logger.warning("No --app-name given: listing every application before filtering by org (may be slow)")
+            apps = self.get_all_applications()
+
+        if org_id:
+            apps = [a for a in apps if (a.get('organization_id') or a.get('oid')) == org_id]
+            logger.info(f"{len(apps)} applications in organization {org_id}")
+        return apps
+
     def get_build_info(self, app_guid: str) -> Optional[Dict]:
         """
         Fetch vulnerability data using the API
@@ -322,13 +340,83 @@ class VeracodeApiFetcher:
                 logger.info(f"Fetched SBOM for application {app_label} (without vulnerability data)")
                 return sbom_data
             except Exception as e2:
-                error_str2 = str(e2)
-                # Check for expected 404 errors (no recent scans)
-                if "404" in error_str2 or "NOT_FOUND" in error_str2:
-                    logger.debug(f"SBOM not available for application {app_label}: no scans")
-                    return None
-                logger.debug(f"Failed to fetch SBOM for application {app_label}: {e2}")
+                status, detail = self._api_error_detail(e2)
+                self.sbom_errors[str(application_guid)] = f"HTTP {status or 'unknown'}: {detail or 'no detail returned'}"
+                if status == 404:
+                    logger.warning(f"SBOM not found (HTTP 404) for application {app_label}: {detail or 'no detail returned'}")
+                else:
+                    logger.warning(f"Failed to fetch SBOM for application {app_label}: HTTP {status or 'unknown'} {detail or e2}")
                 return None
+
+    @staticmethod
+    def _api_error_detail(exc: Exception) -> Tuple[Optional[int], Optional[str]]:
+        """Return (HTTP status, 'detail' text) from a veracode_api_py RequestException"""
+        # veracode_api_py raises RequestException with an empty message; the response is attached as .response
+        response = getattr(exc, 'response', None)
+        status = getattr(exc, 'errno', None) or getattr(response, 'status_code', None)
+        if response is None:  # Response objects are falsy for error statuses, so compare to None
+            return status, None
+        try:
+            body = response.json()
+        except ValueError:
+            return status, (response.text or '').strip()[:300] or None
+        errors = body.get('_embedded', {}).get('errors', []) if isinstance(body, dict) else []
+        if errors:
+            return status, errors[0].get('detail') or errors[0].get('title')
+        return status, body.get('detail') or body.get('message') if isinstance(body, dict) else None
+
+    def collect_app_sbom_components(self, app_id: Optional[str], app_guid: str, app_name: str = "") -> Tuple[List[Dict], Optional[str]]:
+        """Collect the application SBOM plus the agent SBOMs of all linked SCA projects.
+
+        Returns:
+            (SBOM components, reason no SBOM data was found - None when any components were collected)
+        """
+        components: List[Dict] = []
+        app_sbom = self.get_sbom(app_guid, app_name=app_name)
+        if app_sbom:
+            components.extend(self.extract_sbom_components(
+                app_sbom, app_id=app_id, app_guid=app_guid, app_name=app_name, sbom_source='application'))
+
+        for project, project_sbom in self.get_linked_project_sboms(app_guid, app_name=app_name):
+            components.extend(self.extract_sbom_components(
+                project_sbom, app_id=app_id, app_guid=app_guid, app_name=app_name,
+                sbom_source=f"agent:{project.get('name')}"))
+
+        if components:
+            return components, None
+        return components, self.sbom_errors.get(str(app_guid), 'SBOM returned but contained no components')
+
+    def get_linked_project_sboms(self, application_guid: str, app_name: str = "") -> List[Tuple[Dict, Dict]]:
+        """Fetch agent-based SBOMs for every SCA project linked to an application.
+
+        Returns:
+            List of (linked project dict, CycloneDX SBOM) pairs
+        """
+        app_label = app_name or application_guid
+        try:
+            response = SCAApplications().get_projects(UUID(application_guid))
+        except Exception as e:
+            status, detail = self._api_error_detail(e)
+            logger.warning(f"Failed to list linked SCA projects for {app_label}: HTTP {status or 'unknown'} {detail or e}")
+            return []
+
+        projects = response.get('linked_projects', []) if isinstance(response, dict) else []
+        results = []
+        for project in projects:
+            project_id = project.get('id')
+            if not project_id:
+                continue
+            try:
+                sbom = SBOM().get_for_project(UUID(project_id))
+            except Exception as e:
+                status, detail = self._api_error_detail(e)
+                logger.warning(f"Failed to fetch agent SBOM for project '{project.get('name')}' linked to {app_label}: "
+                               f"HTTP {status or 'unknown'} {detail or e}")
+                continue
+            if isinstance(sbom, dict):
+                logger.info(f"Fetched agent SBOM for linked project '{project.get('name')}' ({app_label})")
+                results.append((project, sbom))
+        return results
 
     @staticmethod
     def _xml_to_dict(element) -> Dict:
@@ -373,12 +461,19 @@ class VeracodeApiFetcher:
 
         return result
 
-    def extract_sca_from_detailed_report(self, detailed_report: List[Dict]) -> List[Dict]:
+    def extract_sca_from_detailed_report(self, detailed_report: List[Dict], app_id: Optional[str] = None,
+                                         app_guid: Optional[str] = None, build_id: Optional[str] = None,
+                                         build_date: Optional[str] = None, app_name: Optional[str] = None) -> List[Dict]:
         """
         Extract SCA component vulnerability data from detailed report findings
 
         Args:
             detailed_report: List of SCA component dicts from software_composition_analysis
+            app_id: Veracode application ID to tag each record with
+            app_guid: Veracode application GUID to tag each record with
+            build_id: Build ID this data came from
+            build_date: Timestamp when the build was run (policy_updated_date)
+            app_name: Veracode application name to tag each record with
 
         Returns:
             List of SCA components with vulnerability details
@@ -408,6 +503,11 @@ class VeracodeApiFetcher:
 
             # Each component is a unique record (no aggregation needed)
             record = {
+                'app_id': app_id,
+                'app_guid': app_guid,
+                'app_name': app_name,
+                'build_id': build_id,
+                'build_published_date': build_date,
                 'component_name': component_name,
                 'component_version': component_version,
                 'component_id': comp.get('component_id'),
@@ -472,12 +572,18 @@ class VeracodeApiFetcher:
 
         return components
 
-    def extract_sbom_components(self, sbom_data: Dict) -> List[Dict]:
+    def extract_sbom_components(self, sbom_data: Dict, app_id: Optional[str] = None,
+                                app_guid: Optional[str] = None, app_name: Optional[str] = None,
+                                sbom_source: str = 'application') -> List[Dict]:
         """
         Extract components from CycloneDX SBOM data
 
         Args:
             sbom_data: CycloneDX SBOM JSON
+            app_id: Veracode application ID to tag each record with
+            app_guid: Veracode application GUID to tag each record with
+            app_name: Veracode application name to tag each record with
+            sbom_source: 'application' or 'agent:<linked project name>'
 
         Returns:
             List of components
@@ -508,7 +614,14 @@ class VeracodeApiFetcher:
         logger.debug(f"Found {len(component_list)} components in SBOM")
 
         for comp in component_list:
+            # Agent SBOMs include a '<undefined>:<undefined>' placeholder for the project root
+            if not comp.get('name') or '<undefined>' in comp.get('name', ''):
+                continue
             component = {
+                'app_id': app_id,
+                'app_guid': app_guid,
+                'app_name': app_name,
+                'sbom_source': sbom_source,
                 'component_name': comp.get('name'),
                 'component_version': comp.get('version'),
                 'purl': comp.get('purl'),
@@ -622,25 +735,30 @@ class VeracodeApiFetcher:
 
     def get_latest_build(self, builds: List[Dict]) -> Optional[Dict]:
         """
-        Select the latest build from a list of builds.
+        Select the latest policy scan build from a list of builds.
+        SBOM data is only available for policy scans (static analysis),
+        not for dynamic scans. Dynamic scans have dynamic_scan_type attribute.
 
         Args:
             builds: List of build dictionaries
 
         Returns:
-            The most recent build, or None if list is empty
+            The most recent policy scan build, or None if none found
         """
         if not builds:
             return None
 
-        # Sort by published_date (descending) to get latest
-        try:
-            latest = max(builds, key=lambda b: b.get('published_date', ''))
-            logger.debug(f"Selected latest build: {latest.get('build_id')}")
-            return latest
-        except (KeyError, ValueError) as e:
-            logger.warning(f"Failed to select latest build: {e}")
-            return builds[0] if builds else None
+        # Filter to policy scans only (exclude dynamic scans)
+        # Dynamic scans have dynamic_scan_type attribute; policy scans don't
+        policy_builds = [b for b in builds if not b.get('dynamic_scan_type')]
+        if not policy_builds:
+            logger.debug(f"No policy scans found in {len(builds)} builds (SBOM data unavailable)")
+            return None
+
+        # Builds are ordered chronologically, so the last build is latest
+        latest = policy_builds[-1]
+        logger.debug(f"Selected latest policy scan build: {latest.get('build_id')}")
+        return latest
 
     def get_detailed_report(self, build_id: str) -> Optional[List[Dict]]:
         """
@@ -1101,13 +1219,13 @@ class VeracodeApiFetcher:
 
         try:
             fieldnames = [
-                'application_id', 'app_name',
+                'app_id', 'app_name',
                 'component_type', 'component_name', 'component_version',
                 'bom_ref', 'sha1', 'sha256', 'md5', 'bytecode_hash',
                 'purl', 'vendor',
                 'file_path',
                 'cve_ids', 'cwe_ids',
-                'all_dependencies', 'match_type',
+                'all_dependencies', 'match_type', 'app_guid', 'sbom_source',
             ]
 
             with open(filename, 'w', newline='') as f:
@@ -1143,6 +1261,12 @@ Examples:
   # Export as JSON only
   python api_fetcher.py --format json --limit 5
 
+  # Only apps whose name contains "Payments" in organization 12345
+  python api_fetcher.py --app-name "Payments" --org-id 12345
+
+  # List matching apps without fetching SCA/SBOM data
+  python api_fetcher.py --app-name "Payments" --org-id 12345 --list-apps
+
   # List available credential profiles
   python api_fetcher.py --list-profiles
         """
@@ -1154,6 +1278,10 @@ Examples:
 
     # Collection options
     parser.add_argument('--limit', type=int, help='Limit number of applications to process')
+    parser.add_argument('--app-name', help='Only process applications whose name contains this text')
+    parser.add_argument('--org-id', type=int, help='Only process applications in this organization ID')
+    parser.add_argument('--list-apps', action='store_true',
+                        help='List matching applications and exit without fetching SCA/SBOM data')
     parser.add_argument('--mode', choices=['vuln', 'sbom', 'all'], default='all',
                         help='What to collect: vulnerabilities, SBOM components, or both (default: all)')
     parser.add_argument('--format', choices=['json', 'csv', 'both'], default='both',
@@ -1193,8 +1321,7 @@ Examples:
         # Check credential expiration
         check_credentials_expiration()
 
-        # Get all applications
-        apps = fetcher.get_all_applications()
+        apps = fetcher.get_applications(name=args.app_name, org_id=args.org_id)
         if not apps:
             logger.error("No applications found")
             return
@@ -1204,10 +1331,19 @@ Examples:
             apps = apps[:app_limit]
             logger.info(f"Limited to {len(apps)} applications")
 
+        if args.list_apps:
+            print(f"\n{'App ID':>10}  {'Org ID':>8}  {'GUID':36}  Name")
+            for app in apps:
+                print(f"{app.get('id')!s:>10}  {(app.get('organization_id') or app.get('oid'))!s:>8}  "
+                      f"{app.get('guid')!s:36}  {app.get('profile', {}).get('name') or app.get('name')}")
+            print(f"\n{len(apps)} applications")
+            return
+
         logger.debug(f"Sample app structure: {apps[0] if apps else 'No apps'}")
 
         all_sca_components = []
         all_sbom_components = []
+        sbom_unavailable: Dict[str, str] = {}  # app GUID -> why no SBOM data was found
         app_metadata = []  # Track processed applications
 
         # Process each application based on mode
@@ -1225,11 +1361,14 @@ Examples:
             logger.info(f"Processing app: {app_name} (GUID: {app_guid})")
 
             # Track application metadata
-            app_metadata.append({
+            metadata = {
                 'app_profile_name': app_name,
                 'app_id': app_id,
-                'app_guid': app_guid
-            })
+                'app_guid': app_guid,
+                'sbom_component_count': '',
+                'sbom_unavailable_reason': '',
+            }
+            app_metadata.append(metadata)
 
             # Get SCA components (if mode is 'vuln' or 'all')
             if args.mode in ('vuln', 'all') and app_id:
@@ -1237,14 +1376,18 @@ Examples:
                     # Get builds for this app
                     builds = fetcher.get_build_list(app_id)
                     if builds and len(builds) > 0:
-                        # Get the most recent build
-                        build_id = builds[0].get('build_id') if isinstance(builds[0], dict) else str(builds[0])
-                        logger.debug(f"    Using build ID: {build_id}")
+                        # Get the most recent build (latest is last in chronologically-ordered list)
+                        build_dict = builds[-1] if isinstance(builds[-1], dict) else {}
+                        build_id = build_dict.get('build_id') if isinstance(build_dict, dict) else str(builds[-1])
+                        build_date = build_dict.get('policy_updated_date')
+                        logger.debug(f"    Using build ID: {build_id}, date: {build_date}")
 
                         # Get detailed report for this build
                         detailed_report = fetcher.get_detailed_report(build_id)
                         if detailed_report:
-                            sca_components = fetcher.extract_sca_from_detailed_report(detailed_report)
+                            sca_components = fetcher.extract_sca_from_detailed_report(
+                                detailed_report, app_id=app_id, app_guid=app_guid,
+                                build_id=build_id, build_date=build_date, app_name=app_name)
                             all_sca_components.extend(sca_components)
                             logger.info(f"  Extracted {len(sca_components)} SCA components")
                         else:
@@ -1257,13 +1400,18 @@ Examples:
             # Get SBOM components (if mode is 'sbom' or 'all')
             if args.mode in ('sbom', 'all') and app_guid:
                 try:
-                    sbom_data = fetcher.get_sbom(app_guid)
-                    if sbom_data:
-                        sbom_components = fetcher.extract_sbom_components(sbom_data)
-                        all_sbom_components.extend(sbom_components)
-                        logger.info(f"  Extracted {len(sbom_components)} SBOM components")
+                    sbom_components, unavailable_reason = fetcher.collect_app_sbom_components(
+                        app_id, app_guid, app_name=app_name)
+                    all_sbom_components.extend(sbom_components)
+                    metadata['sbom_component_count'] = len(sbom_components)
+                    if unavailable_reason:
+                        metadata['sbom_unavailable_reason'] = unavailable_reason
+                        sbom_unavailable[str(app_guid)] = unavailable_reason
+                    logger.info(f"  Extracted {len(sbom_components)} SBOM components")
                 except Exception as e:
                     logger.warning(f"  Failed to fetch SBOM components for {app_name}: {e}")
+                    metadata['sbom_unavailable_reason'] = str(e)
+                    sbom_unavailable[str(app_guid)] = str(e)
 
         logger.info(f"Total SCA components collected: {len(all_sca_components)}")
         logger.info(f"Total SBOM components collected: {len(all_sbom_components)}")
@@ -1309,7 +1457,8 @@ Examples:
             import csv
             app_metadata_csv_path = os.path.join(args.output, f'application_metadata_{timestamp}.csv')
             with open(app_metadata_csv_path, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=['app_profile_name', 'app_id', 'app_guid'])
+                writer = csv.DictWriter(f, fieldnames=['app_profile_name', 'app_id', 'app_guid',
+                                                       'sbom_component_count', 'sbom_unavailable_reason'])
                 writer.writeheader()
                 writer.writerows(app_metadata)
             logger.info(f"Exported application metadata CSV: {app_metadata_csv_path}")
@@ -1322,6 +1471,7 @@ Examples:
             matcher = VulnerabilityMatcher()
             matcher.load_sbom_data(all_sbom_components)
             matcher.load_sca_data(all_sca_components)
+            matcher.sbom_unavailable = sbom_unavailable
             matcher.match_all()
 
             matcher.print_summary()

@@ -16,7 +16,12 @@ Run with:
 
 import json
 import logging
+import sys
 from pathlib import Path
+
+# Add parent directory to path so we can import project modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from vulnerability_matcher import VulnerabilityMatcher
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -114,7 +119,7 @@ def save_matcher_results(matcher, filename: str = 'test_csv_matcher_results.json
                 'library_id': c.library_id,
                 'purl': c.purl,
                 'bom_ref': c.bom_ref,
-                'reason': 'No matching SHA1/PURL/name+version found' if c.source == 'sbom' else 'Orphaned SCA component',
+                'reason': matcher.unmatched_reason(c),
             }
             for c in matcher.unmatched
         ],

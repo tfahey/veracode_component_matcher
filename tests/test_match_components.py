@@ -11,7 +11,12 @@ Run with:
 
 import json
 import logging
+import sys
 from pathlib import Path
+
+# Add parent directory to path so we can import project modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from vulnerability_matcher import VulnerabilityMatcher
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
