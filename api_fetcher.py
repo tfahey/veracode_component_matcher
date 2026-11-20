@@ -662,13 +662,14 @@ class VeracodeApiFetcher:
 
     def get_build_list(self, app_id: str) -> Optional[List[Dict]]:
         """
-        Fetch list of builds for an application.
+        Fetch list of static (non-dynamic) builds for an application.
 
         Args:
             app_id: Application ID (legacy or current format)
 
         Returns:
-            List of build dictionaries with build_id, version, status, etc.
+            List of build dictionaries with build_id, version, status, etc., oldest first.
+            Dynamic-scan builds are excluded, so the last entry is the latest static build.
         """
         try:
             logger.debug(f"Fetching build list for app {app_id}")
@@ -716,8 +717,11 @@ class VeracodeApiFetcher:
                     logger.debug(f"builds is not list or dict: {type(builds)}")
                     builds = []
 
-                logger.debug(f"Got {len(builds)} builds for app {app_id}")
-                return builds if builds else None
+                # Ignore dynamic-scan builds (they carry dynamic_scan_type); SCA data comes from static builds
+                static_builds = [b for b in builds if isinstance(b, dict) and not b.get('dynamic_scan_type')]
+                logger.debug(f"Got {len(builds)} builds for app {app_id}, "
+                             f"{len(builds) - len(static_builds)} dynamic ignored")
+                return static_builds if static_builds else None
 
             elif isinstance(response, dict):
                 logger.debug(f"Response is already a dict with keys: {list(response.keys())}")
@@ -736,8 +740,8 @@ class VeracodeApiFetcher:
     def get_latest_build(self, builds: List[Dict]) -> Optional[Dict]:
         """
         Select the latest policy scan build from a list of builds.
-        SBOM data is only available for policy scans (static analysis),
-        not for dynamic scans. Dynamic scans have dynamic_scan_type attribute.
+        get_build_list() already drops dynamic scans; the filter here also covers
+        build lists from other sources.
 
         Args:
             builds: List of build dictionaries
